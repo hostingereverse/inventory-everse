@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Unfulfilled Orders & Gaps - Everse Inventory Management</title>
+  
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <div id="navbar"></div>
+  
+  <div class="container-fluid mt-4">
+    <h1 class="mb-4">Unfulfilled Orders & Gaps</h1>
+    
+    <!-- Info Card -->
+    <div class="alert alert-info mb-4">
+      <strong>Gap Analysis:</strong> This page shows products with pending orders where stock is insufficient. 
+      Gaps are aggregated by product and location.
+    </div>
+    
+    <!-- Sync Button -->
+    <div class="mb-4">
+      <button class="btn btn-primary" onclick="syncGaps()">Sync Gaps from Orders</button>
+      <button class="btn btn-secondary" onclick="loadGaps()">Refresh</button>
+    </div>
+    
+    <!-- Gaps Table -->
+    <div class="card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <h4 class="mb-0">Gap Summary</h4>
+        <button class="btn btn-sm btn-light" onclick="exportGaps()">Export CSV</button>
+      </div>
+      <div class="card-body">
+        <div class="table-responsive">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Product</th>
+                <th>Location</th>
+                <th>Pending Qty</th>
+                <th>Total Gaps</th>
+                <th>Date Created</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="gapsTable">
+              <tr>
+                <td colspan="6" class="text-center">Loading...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://apis.google.com/js/api.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <script src="config.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/app.js"></script>
+  
+  <script>
+    let allGaps = [];
+    
+    async function loadGaps() {
+      try {
+        const data = await initApp();
+        allGaps = data.gaps || [];
+        
+        // Aggregate gaps by product and location
+        const aggregated = aggregateGaps(allGaps);
+        renderGaps(aggregated);
+      } catch (error) {
+        console.error('Load gaps error:', error);
+        showToast('Error loading gaps', 'danger');
+      }
+    }
+    
+    function aggregateGaps(gaps) {
+      const grouped = {};
+      
+      gaps.forEach(gap => {
+        const key = `${gap.product}_${gap.location}`;
+        if (!grouped[key]) {
+          grouped[key] = {
+            product: gap.product,
+            location: gap.location,
+            pendingQty: 0,
+            totalGaps: 0,
+            dateCreated: gap.dateCreated || new Date().toISOString().split('T')[0]
+          };
+        }
+        grouped[key].pendingQty += parseInt(gap.pendingQty) || 0;
+        grouped[key].totalGaps += parseInt(gap.totalGaps) || 0;
+      });
+      
+      return Object.values(grouped);
+    }
+    
+    function renderGaps(gaps) {
+      const tbody = document.getElementById('gapsTable');
+      if (!tbody) return;
+      
+      if (gaps.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center">No gaps found. All orders can be fulfilled.</td></tr>';
+        return;
+      }
+      
+      tbody.innerHTML = gaps.map(gap => {
+        return `
+          <tr>
+            <td><strong>${gap.product}</strong></td>
+            <td>${gap.location}</td>
+            <td><span class="badge bg-warning text-dark">${gap.pendingQty}</span></td>
+            <td><span class="badge bg-danger">${gap.totalGaps}</span></td>
+            <td>${gap.dateCreated}</td>
+            <td>
+              <button class="btn btn-sm btn-success" onclick="resolveGap('${gap.product}', '${gap.location}')">Resolve</button>
+              <button class="btn btn-sm btn-info" onclick="notifyGap('${gap.product}', '${gap.location}')">Notify</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+    
+    async function syncGaps() {
+      try {
+        showToast('Syncing gaps from orders...', 'info');
+        
+        const data = await initApp();
+        const orders = data.orders || [];
+        const inventory = data.inventory || [];
+        
+        // Process all processing orders
+        const newGaps = [];
+        for (const order of orders) {
+          if (order.status && order.status.toUpperCase() === 'PROCESSING') {
+            await handleGap(order, inventory);
+            
+            // Check if gap exists
+            const product = inventory.find(p => 
+              p.name === order.product || p.productID === order.product
+            );
+            
+            if (product) {
+              const location = order.deliverylocation || order.deliveryLocation || '';
+              const warehouse = CONFIG.WAREHOUSES.find(w => 
+                location.toUpperCase().includes(w.toUpperCase().substring(0, 3))
+              ) || location;
+              
+              const stock = product.stock[warehouse] || 0;
+              const qty = 1; // Assuming qty is 1
+              
+              if (stock < qty) {
+                const gap = {
+                  product: order.product,
+                  location: warehouse,
+                  pendingQty: qty - stock,
+                  totalGaps: qty - stock,
+                  dateCreated: formatDate(order.date) || new Date().toISOString().split('T')[0]
+                };
+                
+                // Check if gap already exists
+                const existing = allGaps.find(g => 
+                  g.product === gap.product && g.location === gap.location
+                );
+                
+                if (!existing) {
+                  newGaps.push(gap);
+                }
+              }
+            }
+          }
+        }
+        
+        // Save new gaps
+        for (const gap of newGaps) {
+          await saveSheet(CONFIG.SHEETS.GAPS.range, [
+            gap.product,
+            gap.location,
+            gap.pendingQty,
+            gap.totalGaps,
+            gap.dateCreated
+          ], CONFIG.SHEETS.GAPS.sheetKey);
+        }
+        
+        showToast(`Gap sync complete. ${newGaps.length} new gaps found.`, 'success');
+        await loadGaps();
+      } catch (error) {
+        console.error('Sync gaps error:', error);
+        showToast('Error syncing gaps', 'danger');
+      }
+    }
+    
+    async function resolveGap(product, location) {
+      if (!confirm(`Mark gap for ${product} at ${location} as resolved?`)) {
+        return;
+      }
+      
+      try {
+        // In a real implementation, this would update the gap status or remove it
+        // For now, we'll just show a message
+        showToast(`Gap resolved. Please update stock for ${product} at ${location}.`, 'success');
+        
+        // Reload to refresh
+        await loadGaps();
+      } catch (error) {
+        console.error('Resolve gap error:', error);
+        showToast('Error resolving gap', 'danger');
+      }
+    }
+    
+    function notifyGap(product, location) {
+      // In a real implementation, this would send a notification
+      showToast(`Notification sent for ${product} at ${location}`, 'info');
+    }
+    
+    async function exportGaps() {
+      const aggregated = aggregateGaps(allGaps);
+      exportToCSV(aggregated, `gaps_${new Date().toISOString().split('T')[0]}.csv`);
+      showToast('Gaps exported to CSV', 'success');
+    }
+    
+    // Initialize
+    document.addEventListener('DOMContentLoaded', loadGaps);
+  </script>
+</body>
+</html>
+

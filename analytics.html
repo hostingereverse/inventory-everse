@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Analytics - Everse Inventory Management</title>
+  
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <div id="navbar"></div>
+  
+  <div class="container-fluid mt-4">
+    <h1 class="mb-4">Low/No Stock Analytics</h1>
+    
+    <!-- Filters -->
+    <div class="filter-bar mb-4">
+      <div class="row g-3">
+        <div class="col-md-3">
+          <label class="form-label">Warehouse</label>
+          <select class="form-select" id="filterWarehouse">
+            <option value="">All Warehouses</option>
+          </select>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Date From</label>
+          <input type="date" class="form-control" id="dateFrom">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Date To</label>
+          <input type="date" class="form-control" id="dateTo">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">&nbsp;</label>
+          <div>
+            <button class="btn btn-primary w-100" onclick="applyAnalyticsFilters()">Apply Filters</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Charts -->
+    <div class="row mb-4">
+      <div class="col-md-6">
+        <div class="chart-container">
+          <h4>Low Stock Items</h4>
+          <canvas id="lowStockChart"></canvas>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="chart-container">
+          <h4>Turnover Ratio</h4>
+          <canvas id="turnoverChart"></canvas>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Low Stock Table -->
+    <div class="card mb-4">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <h4 class="mb-0">Low Stock Items (< Reorder Level)</h4>
+        <button class="btn btn-sm btn-light" onclick="exportLowStock()">Export CSV</button>
+      </div>
+      <div class="card-body">
+        <div class="table-responsive">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Product ID</th>
+                <th>Name</th>
+                <th>Warehouse</th>
+                <th>Current Stock</th>
+                <th>Reorder Level</th>
+                <th>Unit Cost</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="lowStockTable">
+              <tr>
+                <td colspan="7" class="text-center">Loading...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    
+    <!-- No Stock Table -->
+    <div class="card mb-4">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <h4 class="mb-0">No Stock Items (= 0)</h4>
+        <button class="btn btn-sm btn-light" onclick="exportNoStock()">Export CSV</button>
+      </div>
+      <div class="card-body">
+        <div class="table-responsive">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Product ID</th>
+                <th>Name</th>
+                <th>Warehouse</th>
+                <th>Reorder Level</th>
+                <th>Unit Cost</th>
+                <th>Days Out of Stock</th>
+              </tr>
+            </thead>
+            <tbody id="noStockTable">
+              <tr>
+                <td colspan="6" class="text-center">Loading...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Out of Stock > 30 Days -->
+    <div class="card">
+      <div class="card-header">
+        <h4 class="mb-0">Items Out of Stock > 30 Days</h4>
+      </div>
+      <div class="card-body">
+        <div class="table-responsive">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Product ID</th>
+                <th>Name</th>
+                <th>Warehouse</th>
+                <th>Days Out of Stock</th>
+                <th>Last Movement Date</th>
+              </tr>
+            </thead>
+            <tbody id="longTermOutTable">
+              <tr>
+                <td colspan="5" class="text-center">Loading...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://apis.google.com/js/api.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <script src="config.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/app.js"></script>
+  
+  <script>
+    let lowStockChart, turnoverChart;
+    let filteredInventory = [];
+    let filteredMovements = [];
+    
+    async function loadAnalytics() {
+      try {
+        const data = await initApp();
+        filteredInventory = data.inventory || [];
+        filteredMovements = data.movements || [];
+        
+        // Populate warehouse filter
+        const select = document.getElementById('filterWarehouse');
+        if (select) {
+          select.innerHTML = '<option value="">All Warehouses</option>';
+          CONFIG.WAREHOUSES.forEach(wh => {
+            const option = document.createElement('option');
+            option.value = wh;
+            option.textContent = wh;
+            select.appendChild(option);
+          });
+        }
+        
+        // Set default dates (last 30 days)
+        const today = new Date();
+        const thirtyDaysAgo = new Date(today);
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        
+        document.getElementById('dateFrom').value = thirtyDaysAgo.toISOString().split('T')[0];
+        document.getElementById('dateTo').value = today.toISOString().split('T')[0];
+        
+        applyAnalyticsFilters();
+      } catch (error) {
+        console.error('Load analytics error:', error);
+        showToast('Error loading analytics', 'danger');
+      }
+    }
+    
+    function applyAnalyticsFilters() {
+      const warehouse = document.getElementById('filterWarehouse').value;
+      const dateFrom = document.getElementById('dateFrom').value;
+      const dateTo = document.getElementById('dateTo').value;
+      
+      // Filter inventory by warehouse
+      let inventory = [...appData.inventory || []];
+      
+      // Filter movements by date
+      let movements = [...appData.movements || []];
+      if (dateFrom) {
+        movements = movements.filter(m => m.date >= dateFrom);
+      }
+      if (dateTo) {
+        movements = movements.filter(m => m.date <= dateTo);
+      }
+      
+      filteredMovements = movements;
+      
+      renderLowStock(inventory, warehouse);
+      renderNoStock(inventory, warehouse);
+      renderLongTermOut(inventory, warehouse);
+      renderCharts(inventory, movements);
+    }
+    
+    function renderLowStock(inventory, warehouseFilter) {
+      const tbody = document.getElementById('lowStockTable');
+      if (!tbody) return;
+      
+      const lowStockItems = [];
+      
+      inventory.forEach(product => {
+        const warehouses = warehouseFilter ? [warehouseFilter] : CONFIG.WAREHOUSES;
+        
+        warehouses.forEach(wh => {
+          const stock = product.stock[wh] || 0;
+          const reorderLevel = product.reorderLevel || 0;
+          
+          if (stock > 0 && stock < reorderLevel) {
+            lowStockItems.push({
+              productID: product.productID,
+              name: product.name,
+              warehouse: wh,
+              stock: stock,
+              reorderLevel: reorderLevel,
+              unitCost: product.unitCost || 0
+            });
+          }
+        });
+      });
+      
+      if (lowStockItems.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center">No low stock items found</td></tr>';
+        return;
+      }
+      
+      tbody.innerHTML = lowStockItems.map(item => {
+        const percent = (item.stock / item.reorderLevel * 100).toFixed(0);
+        return `
+          <tr>
+            <td>${item.productID}</td>
+            <td>${item.name}</td>
+            <td>${item.warehouse}</td>
+            <td><span class="badge bg-warning text-dark">${item.stock}</span></td>
+            <td>${item.reorderLevel}</td>
+            <td>${formatCurrency(item.unitCost)}</td>
+            <td>${percent}% of reorder level</td>
+          </tr>
+        `;
+      }).join('');
+    }
+    
+    function renderNoStock(inventory, warehouseFilter) {
+      const tbody = document.getElementById('noStockTable');
+      if (!tbody) return;
+      
+      const noStockItems = [];
+      
+      inventory.forEach(product => {
+        const warehouses = warehouseFilter ? [warehouseFilter] : CONFIG.WAREHOUSES;
+        
+        warehouses.forEach(wh => {
+          const stock = product.stock[wh] || 0;
+          
+          if (stock === 0) {
+            // Calculate days out of stock from movements
+            const lastMovement = filteredMovements
+              .filter(m => m.productid === product.productID || m.productID === product.productID)
+              .filter(m => m.warehouse === wh)
+              .sort((a, b) => new Date(b.date) - new Date(a.date))[0];
+            
+            const daysOut = lastMovement ? 
+              Math.floor((new Date() - new Date(lastMovement.date)) / (1000 * 60 * 60 * 24)) : 
+              'N/A';
+            
+            noStockItems.push({
+              productID: product.productID,
+              name: product.name,
+              warehouse: wh,
+              reorderLevel: product.reorderLevel || 0,
+              unitCost: product.unitCost || 0,
+              daysOut: daysOut
+            });
+          }
+        });
+      });
+      
+      if (noStockItems.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center">No out of stock items found</td></tr>';
+        return;
+      }
+      
+      tbody.innerHTML = noStockItems.map(item => {
+        return `
+          <tr>
+            <td>${item.productID}</td>
+            <td>${item.name}</td>
+            <td>${item.warehouse}</td>
+            <td>${item.reorderLevel}</td>
+            <td>${formatCurrency(item.unitCost)}</td>
+            <td>${item.daysOut}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+    
+    function renderLongTermOut(inventory, warehouseFilter) {
+      const tbody = document.getElementById('longTermOutTable');
+      if (!tbody) return;
+      
+      const longTermOut = [];
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      
+      inventory.forEach(product => {
+        const warehouses = warehouseFilter ? [warehouseFilter] : CONFIG.WAREHOUSES;
+        
+        warehouses.forEach(wh => {
+          const stock = product.stock[wh] || 0;
+          
+          if (stock === 0) {
+            const lastMovement = filteredMovements
+              .filter(m => (m.productid === product.productID || m.productID === product.productID) && m.warehouse === wh)
+              .sort((a, b) => new Date(b.date) - new Date(a.date))[0];
+            
+            if (lastMovement) {
+              const lastDate = new Date(lastMovement.date);
+              if (lastDate < thirtyDaysAgo) {
+                const daysOut = Math.floor((new Date() - lastDate) / (1000 * 60 * 60 * 24));
+                longTermOut.push({
+                  productID: product.productID,
+                  name: product.name,
+                  warehouse: wh,
+                  daysOut: daysOut,
+                  lastMovementDate: lastMovement.date
+                });
+              }
+            }
+          }
+        });
+      });
+      
+      if (longTermOut.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center">No items out of stock for > 30 days</td></tr>';
+        return;
+      }
+      
+      longTermOut.sort((a, b) => b.daysOut - a.daysOut);
+      
+      tbody.innerHTML = longTermOut.map(item => {
+        return `
+          <tr>
+            <td>${item.productID}</td>
+            <td>${item.name}</td>
+            <td>${item.warehouse}</td>
+            <td><span class="badge bg-danger">${item.daysOut} days</span></td>
+            <td>${item.lastMovementDate}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+    
+    function renderCharts(inventory, movements) {
+      renderLowStockChart(inventory);
+      renderTurnoverChart(inventory, movements);
+    }
+    
+    function renderLowStockChart(inventory) {
+      const ctx = document.getElementById('lowStockChart');
+      if (!ctx) return;
+      
+      const warehouseCounts = {};
+      
+      CONFIG.WAREHOUSES.forEach(wh => {
+        let count = 0;
+        inventory.forEach(product => {
+          const stock = product.stock[wh] || 0;
+          const reorderLevel = product.reorderLevel || 0;
+          if (stock > 0 && stock < reorderLevel) count++;
+        });
+        warehouseCounts[wh] = count;
+      });
+      
+      if (lowStockChart) lowStockChart.destroy();
+      
+      lowStockChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: Object.keys(warehouseCounts),
+          datasets: [{
+            label: 'Low Stock Items',
+            data: Object.values(warehouseCounts),
+            backgroundColor: '#ffc107'
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: true,
+          scales: {
+            y: {
+              beginAtZero: true
+            }
+          }
+        }
+      });
+    }
+    
+    function renderTurnoverChart(inventory, movements) {
+      const ctx = document.getElementById('turnoverChart');
+      if (!ctx) return;
+      
+      // Calculate turnover ratio (simplified: movements / total stock)
+      const turnover = {};
+      
+      CONFIG.WAREHOUSES.forEach(wh => {
+        const totalStock = inventory.reduce((sum, p) => sum + (p.stock[wh] || 0), 0);
+        const movementsCount = movements.filter(m => m.warehouse === wh).length;
+        turnover[wh] = totalStock > 0 ? (movementsCount / totalStock).toFixed(2) : 0;
+      });
+      
+      if (turnoverChart) turnoverChart.destroy();
+      
+      turnoverChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: Object.keys(turnover),
+          datasets: [{
+            label: 'Turnover Ratio',
+            data: Object.values(turnover),
+            borderColor: '#667eea',
+            backgroundColor: 'rgba(102, 126, 234, 0.1)',
+            fill: true
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: true,
+          scales: {
+            y: {
+              beginAtZero: true
+            }
+          }
+        }
+      });
+    }
+    
+    async function exportLowStock() {
+      const warehouse = document.getElementById('filterWarehouse').value;
+      const items = [];
+      
+      (appData.inventory || []).forEach(product => {
+        const warehouses = warehouse ? [warehouse] : CONFIG.WAREHOUSES;
+        warehouses.forEach(wh => {
+          const stock = product.stock[wh] || 0;
+          const reorderLevel = product.reorderLevel || 0;
+          if (stock > 0 && stock < reorderLevel) {
+            items.push({
+              ProductID: product.productID,
+              Name: product.name,
+              Warehouse: wh,
+              CurrentStock: stock,
+              ReorderLevel: reorderLevel,
+              UnitCost: product.unitCost
+            });
+          }
+        });
+      });
+      
+      exportToCSV(items, `low_stock_${new Date().toISOString().split('T')[0]}.csv`);
+      showToast('Low stock report exported', 'success');
+    }
+    
+    async function exportNoStock() {
+      const warehouse = document.getElementById('filterWarehouse').value;
+      const items = [];
+      
+      (appData.inventory || []).forEach(product => {
+        const warehouses = warehouse ? [warehouse] : CONFIG.WAREHOUSES;
+        warehouses.forEach(wh => {
+          const stock = product.stock[wh] || 0;
+          if (stock === 0) {
+            items.push({
+              ProductID: product.productID,
+              Name: product.name,
+              Warehouse: wh,
+              ReorderLevel: product.reorderLevel,
+              UnitCost: product.unitCost
+            });
+          }
+        });
+      });
+      
+      exportToCSV(items, `no_stock_${new Date().toISOString().split('T')[0]}.csv`);
+      showToast('No stock report exported', 'success');
+    }
+    
+    // Initialize
+    document.addEventListener('DOMContentLoaded', loadAnalytics);
+  </script>
+</body>
+</html>
+
