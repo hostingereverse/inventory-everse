@@ -61,25 +61,30 @@
     <div class="filter-bar mb-4">
       <div class="row g-3">
         <div class="col-md-2">
+          <label class="form-label">Date From</label>
           <input type="date" class="form-control" id="filterMovementDate" placeholder="Filter by Date">
         </div>
         <div class="col-md-2">
+          <label class="form-label">Date To</label>
+          <input type="date" class="form-control" id="filterDateTo" placeholder="To Date">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label">Warehouse</label>
           <select class="form-select" id="filterMovementWarehouse">
             <option value="">All Warehouses</option>
           </select>
         </div>
         <div class="col-md-2">
+          <label class="form-label">Type</label>
           <select class="form-select" id="filterMovementType">
             <option value="">All Types</option>
             <option value="In">In</option>
             <option value="Out">Out</option>
           </select>
         </div>
-        <div class="col-md-1">
-          <button class="btn btn-primary w-100" onclick="applyMovementFilters()">Filter</button>
-        </div>
-        <div class="col-md-1">
-          <button class="btn btn-secondary w-100" onclick="resetMovementFilters()">Reset</button>
+        <div class="col-md-2 d-flex align-items-end">
+          <button class="btn btn-primary me-2" onclick="applyMovementFilters()">Filter</button>
+          <button class="btn btn-secondary" onclick="resetMovementFilters()">Reset</button>
         </div>
       </div>
     </div>
@@ -125,6 +130,9 @@
   </div>
   
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <!-- Authentication -->
+  <script src="auth-config.js"></script>
+  <script src="auth.js"></script>
   <script src="https://apis.google.com/js/api.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
   <script src="config.js"></script>
@@ -141,7 +149,41 @@
       try {
         const data = await initApp();
         allMovements = data.movements || [];
-        filteredMovements = [...allMovements];
+        
+        // Set default date filter to past 7 days
+        const today = new Date();
+        const sevenDaysAgo = new Date(today);
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        
+        // Format dates for input field
+        const dateFromStr = sevenDaysAgo.toISOString().split('T')[0];
+        const dateToStr = today.toISOString().split('T')[0];
+        
+        // Set default date filter
+        document.getElementById('filterMovementDate').value = dateFromStr;
+        document.getElementById('filterDateTo')?.remove(); // Remove if exists
+        
+        // Add date-to input if it doesn't exist
+        let dateToInput = document.getElementById('filterDateTo');
+        if (!dateToInput) {
+          const dateFromInput = document.getElementById('filterMovementDate');
+          const parent = dateFromInput.parentElement;
+          const newInput = document.createElement('div');
+          newInput.className = 'col-md-2';
+          newInput.innerHTML = `
+            <label class="form-label">Date To</label>
+            <input type="date" class="form-control" id="filterDateTo" value="${dateToStr}">
+          `;
+          parent.parentElement.insertBefore(newInput, parent.nextSibling);
+        } else {
+          dateToInput.value = dateToStr;
+        }
+        
+        // Filter by default 7 days
+        filteredMovements = allMovements.filter(movement => {
+          const movementDate = movement.date || '';
+          return movementDate >= dateFromStr && movementDate <= dateToStr;
+        });
         
         // Sort by date descending
         filteredMovements.sort((a, b) => {
@@ -188,12 +230,14 @@
     }
     
     function applyMovementFilters() {
-      const date = document.getElementById('filterMovementDate').value;
+      const dateFrom = document.getElementById('filterMovementDate').value;
+      const dateTo = document.getElementById('filterDateTo').value;
       const warehouse = document.getElementById('filterMovementWarehouse').value;
       const type = document.getElementById('filterMovementType').value;
       
       filteredMovements = allMovements.filter(movement => {
-        const dateMatch = !date || (movement.date || '').includes(date);
+        const movementDate = movement.date || '';
+        const dateMatch = (!dateFrom || movementDate >= dateFrom) && (!dateTo || movementDate <= dateTo);
         const warehouseMatch = !warehouse || (movement.warehouse || '').toUpperCase() === warehouse.toUpperCase();
         const typeMatch = !type || (movement.type || '').toUpperCase() === type.toUpperCase();
         
@@ -211,12 +255,18 @@
     }
     
     function resetMovementFilters() {
-      document.getElementById('filterMovementDate').value = '';
+      // Reset to past 7 days default
+      const today = new Date();
+      const sevenDaysAgo = new Date(today);
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+      
+      document.getElementById('filterMovementDate').value = sevenDaysAgo.toISOString().split('T')[0];
+      document.getElementById('filterDateTo').value = today.toISOString().split('T')[0];
       document.getElementById('filterMovementWarehouse').value = '';
       document.getElementById('filterMovementType').value = '';
-      filteredMovements = [...allMovements];
-      currentPage = 1;
-      renderMovements();
+      
+      // Apply default filter
+      applyMovementFilters();
     }
     
     function renderMovements() {

@@ -105,12 +105,168 @@ git push -u origin main
 
 ### Netlify Deployment
 
-1. Connect your GitHub repository to Netlify
-2. Build settings:
-   - Build command: (none - static site)
-   - Publish directory: `/` (root)
-3. Add environment variables in Netlify dashboard (optional, can be in config.js)
-4. Custom domain: Add `everse.co.in` and configure DNS CNAME record
+#### Step 1: Create Netlify Account
+
+1. Go to [https://www.netlify.com/](https://www.netlify.com/)
+2. Click "Sign up" → Choose "Sign up with GitHub"
+3. Authorize Netlify to access your GitHub account
+
+#### Step 2: Deploy from GitHub
+
+1. **Add New Site:**
+   - Click "Add new site" → "Import an existing project"
+   - Choose "Deploy with GitHub"
+   - Authorize Netlify if prompted
+
+2. **Select Repository:**
+   - Choose the `Adminforeverse/inventory` repository
+   - Click "Connect"
+
+3. **Configure Build Settings:**
+   - **Branch to deploy:** `main` (or `master`)
+   - **Build command:** Leave empty (this is a static site)
+   - **Publish directory:** `/` (root directory)
+   - Click "Deploy site"
+
+4. **Wait for Deployment:**
+   - Netlify will automatically deploy your site
+   - You'll get a URL like: `https://random-name-123456.netlify.app`
+   - This is your temporary Netlify URL
+
+#### Step 3: Add Custom Domain (everse.co.in)
+
+1. **In Netlify Dashboard:**
+   - Go to your site → "Domain settings"
+   - Click "Add custom domain"
+   - Enter: `everse.co.in`
+   - Click "Verify"
+
+2. **Netlify will show DNS configuration:**
+   - You'll see instructions for DNS setup
+   - Note the Netlify domain (e.g., `random-name-123456.netlify.app`)
+
+#### Step 4: Configure DNS for everse.co.in
+
+You need to configure DNS with your domain registrar (where you bought everse.co.in):
+
+**Option A: Using A Records (Root Domain - everse.co.in)**
+
+1. Log in to your domain registrar (Namecheap, GoDaddy, etc.)
+2. Go to DNS Management for `everse.co.in`
+3. Add/Edit DNS records:
+
+   **For Root Domain (everse.co.in):**
+   ```
+   Type: A
+   Name: @ (or leave blank)
+   Value: 75.2.60.5
+   TTL: 3600 (or Auto)
+   ```
+
+   **For WWW Subdomain (www.everse.co.in):**
+   ```
+   Type: CNAME
+   Name: www
+   Value: random-name-123456.netlify.app (your Netlify site URL)
+   TTL: 3600 (or Auto)
+   ```
+
+**Option B: Using CNAME (If your registrar supports CNAME for root domain)**
+
+Some registrars allow CNAME flattening. If yours does:
+
+```
+Type: CNAME
+Name: @
+Value: random-name-123456.netlify.app
+TTL: 3600
+```
+
+**Important DNS Records to Add:**
+
+1. **Root Domain (everse.co.in):**
+   - Type: `A`
+   - Name: `@`
+   - Value: `75.2.60.5` (Netlify's IP)
+   - TTL: `3600`
+
+2. **WWW Subdomain (www.everse.co.in):**
+   - Type: `CNAME`
+   - Name: `www`
+   - Value: `[your-netlify-site].netlify.app`
+   - TTL: `3600`
+
+#### Step 5: SSL Certificate (Automatic)
+
+- Netlify automatically provisions SSL certificates via Let's Encrypt
+- Wait 5-10 minutes after DNS propagation
+- Netlify will enable HTTPS automatically
+- Your site will be accessible at: `https://everse.co.in`
+
+#### Step 6: Verify DNS Propagation
+
+Check if DNS has propagated:
+
+1. **Using Terminal/Command Prompt:**
+   ```bash
+   nslookup everse.co.in
+   ping everse.co.in
+   ```
+
+2. **Online Tools:**
+   - Visit [https://dnschecker.org/](https://dnschecker.org/)
+   - Enter `everse.co.in`
+   - Check if it resolves globally
+
+3. **Wait Time:**
+   - DNS changes can take 24-48 hours to fully propagate
+   - Usually works within 1-2 hours
+
+#### Step 7: Test Your Site
+
+1. Visit `https://everse.co.in` in your browser
+2. Verify all pages load correctly:
+   - `https://everse.co.in/index.html`
+   - `https://everse.co.in/orders.html`
+   - `https://everse.co.in/products.html`
+   - etc.
+
+#### Step 8: Environment Variables (Optional)
+
+If you want to keep API keys secure, add them as environment variables in Netlify:
+
+1. Go to: Site settings → Environment variables
+2. Add variables (if you modify code to read from `process.env`):
+   - `GOOGLE_API_KEY`
+   - `GOOGLE_CLIENT_ID`
+   - etc.
+
+**Note:** Currently, API keys are in `config.js`. For production, consider moving sensitive data to environment variables.
+
+#### Troubleshooting
+
+**Domain not working:**
+- Check DNS propagation at [dnschecker.org](https://dnschecker.org/)
+- Verify DNS records are correct
+- Wait 24-48 hours for full propagation
+- Check Netlify domain settings → "Check DNS configuration"
+
+**SSL Certificate issues:**
+- Ensure DNS is fully propagated
+- Wait a few hours after DNS setup
+- Contact Netlify support if issues persist
+
+**Build errors:**
+- Check Netlify deploy logs
+- Verify all files are committed to GitHub
+- Ensure no syntax errors in JavaScript files
+
+#### Netlify Domain Settings Reference
+
+- **Default Netlify domain:** `[site-name].netlify.app`
+- **Custom domain:** `everse.co.in`
+- **SSL:** Automatic (Let's Encrypt)
+- **HTTPS:** Enabled automatically
 
 ## File Structure
 

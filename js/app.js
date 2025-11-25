@@ -7,6 +7,12 @@ let appData = {
   loading: false
 };
 
+// Authentication check - only loads if auth.js is included
+if (typeof Auth !== 'undefined') {
+  // Auth is loaded, it will handle authentication automatically
+  // This allows existing code to work without modifications
+}
+
 // Show toast notification
 function showToast(message, type = 'info') {
   const toastContainer = document.getElementById('toastContainer') || createToastContainer();
@@ -149,6 +155,26 @@ function renderNavbar() {
   const navbar = document.getElementById('navbar');
   if (!navbar) return;
   
+  // Get current user if auth is enabled
+  let userInfo = '';
+  if (typeof Auth !== 'undefined' && Auth.getCurrentUser) {
+    const user = Auth.getCurrentUser();
+    if (user) {
+      userInfo = `
+        <li class="nav-item dropdown">
+          <a class="nav-link dropdown-toggle" href="#" id="userDropdown" role="button" data-bs-toggle="dropdown">
+            ${user.name || user.email} (${user.role})
+          </a>
+          <ul class="dropdown-menu dropdown-menu-end">
+            <li><a class="dropdown-item" href="auth-user-profile.html">Profile</a></li>
+            <li><hr class="dropdown-divider"></li>
+            <li><a class="dropdown-item" href="#" onclick="Auth.logout(); return false;">Logout</a></li>
+          </ul>
+        </li>
+      `;
+    }
+  }
+  
   navbar.innerHTML = `
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
       <div class="container-fluid">
@@ -179,6 +205,7 @@ function renderNavbar() {
             <li class="nav-item">
               <a class="nav-link" href="#" onclick="exportCSV(); return false;">Export</a>
             </li>
+            ${userInfo}
           </ul>
         </div>
       </div>
