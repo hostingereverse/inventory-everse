@@ -1,23 +1,42 @@
-# Config files with sensitive data (optional - uncomment if you want to exclude config.js)
-# config.js
-
-# OS files
+# OS Files
 .DS_Store
 Thumbs.db
 desktop.ini
 
-# IDE files
+# IDE Files
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
 
+# Node modules (if any)
+node_modules/
+npm-debug.log
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
 # Logs
 *.log
-npm-debug.log*
+logs/
 
 # Temporary files
 *.tmp
 *.temp
+.cache/
 
+# Build files (if any)
+dist/
+build/
+
+# Backup files
+*.bak
+*.backup
+*~
+
+# Personal notes (optional - remove if you want to track)
+NOTES.md
+TODO.md
