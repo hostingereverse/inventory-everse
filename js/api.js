@@ -2,8 +2,29 @@
 let gapiLoaded = false;
 let gapiInitialized = false;
 
-// Initialize Google API
+// Initialize Google API (now uses Google OAuth from google-auth.js)
 async function initGAPI() {
+  // Use new Google Auth system if enabled
+  if (CONFIG.SECURITY && CONFIG.SECURITY.USE_GOOGLE_AUTH && window.GoogleAuth) {
+    try {
+      if (!GoogleAuth.isAuthenticated()) {
+        // Not authenticated - redirect to login
+        sessionStorage.setItem('redirect_after_login', window.location.pathname);
+        window.location.href = 'login-google.html';
+        return false;
+      }
+      
+      // Already authenticated via Google OAuth
+      gapiLoaded = true;
+      gapiInitialized = true;
+      return true;
+    } catch (error) {
+      console.error('Google Auth check error:', error);
+      return false;
+    }
+  }
+  
+  // Legacy initialization (if Google Auth not enabled)
   if (gapiLoaded && gapiInitialized) return true;
   
   return new Promise((resolve, reject) => {
@@ -128,7 +149,7 @@ function getSampleDataForRange(range) {
   return [];
 }
 
-// Save/append to sheet
+// Save/append to sheet (with audit logging)
 async function saveSheet(range, values, sheetKey = 'SALES') {
   const spreadsheetId = getSpreadsheetId(sheetKey);
   
@@ -140,6 +161,19 @@ async function saveSheet(range, values, sheetKey = 'SALES') {
         valueInputOption: 'RAW',
         resource: { values: Array.isArray(values[0]) ? values : [values] }
       });
+      
+      // Log audit event
+      if (typeof logAuditEvent === 'function') {
+        const entity = range.split('!')[0];
+        await logAuditEvent({
+          action: 'CREATE',
+          entity: entity,
+          entityID: values[0] || '',
+          newValue: values,
+          details: `Added new record to ${entity}`
+        });
+      }
+      
       return { success: true };
     }
   } catch (error) {
@@ -186,12 +220,22 @@ async function loadAllData() {
       loadSheet(CONFIG.SHEETS.GAPS.range, CONFIG.SHEETS.GAPS.sheetKey)
     ]);
     
-    return {
+    const data = {
       orders: parseOrders(ordersRes.values || []),
       inventory: parseInventory(inventoryRes.values || []),
       movements: parseMovements(movementsRes.values || []),
       gaps: parseGaps(gapsRes.values || [])
     };
+    
+    // Auto-add products from sales data (if AutoProduct is available)
+    if (typeof AutoProduct !== 'undefined' && AutoProduct.syncProductsFromOrders) {
+      // Run async without blocking
+      AutoProduct.syncProductsFromOrders().catch(err => {
+        console.warn('Auto-product sync failed:', err);
+      });
+    }
+    
+    return data;
   } catch (error) {
     console.error('Load all failed:', error);
     return getSampleData();
@@ -238,7 +282,12 @@ function parseMovements(rows) {
   return rows.slice(1).map(row => {
     const obj = {};
     cols.forEach((col, i) => {
-      obj[col.toLowerCase().replace(/\s+/g, '')] = row[i] || '';
+      const key = col.toLowerCase().replace(/\s+/g, '');
+      obj[key] = row[i] || '';
+      // Also map SerialNumbers explicitly
+      if (col === 'SerialNumbers') {
+        obj.serialNumbers = row[i] || '';
+      }
     });
     return obj;
   }).filter(m => m.date);
@@ -295,18 +344,27 @@ async function updateStock(productID, warehouse, delta) {
   }
 }
 
-// Log stock movement
+// Log stock movement (with serial numbers support and audit logging)
 async function logMovement(movement) {
   try {
     movement.date = movement.date || new Date().toISOString().split('T')[0];
+    const user = (typeof GoogleAuth !== 'undefined' && GoogleAuth.getCurrentUser) 
+      ? GoogleAuth.getCurrentUser()?.email 
+      : (typeof Auth !== 'undefined' && Auth.getCurrentUser) 
+        ? Auth.getCurrentUser()?.email 
+        : 'System';
+    
+    movement.user = movement.user || user || 'System';
+    
     const values = [
       movement.date,
       movement.warehouse,
       movement.productID,
       movement.type,
       movement.qty,
+      movement.serialNumbers || '', // Serial numbers column
       movement.notes || '',
-      movement.user || 'System'
+      movement.user
     ];
     
     await saveSheet(CONFIG.SHEETS.STOCK_MOVEMENTS.range, values, CONFIG.SHEETS.STOCK_MOVEMENTS.sheetKey);
@@ -314,6 +372,17 @@ async function logMovement(movement) {
     // Update inventory
     const delta = movement.type === 'In' ? movement.qty : -movement.qty;
     await updateStock(movement.productID, movement.warehouse, delta);
+    
+    // Log audit event
+    if (typeof logAuditEvent === 'function') {
+      await logAuditEvent({
+        action: 'STOCK_MOVEMENT',
+        entity: 'StockMovement',
+        entityID: movement.productID,
+        newValue: movement,
+        details: `${movement.type} ${movement.qty} units of ${movement.productID} at ${movement.warehouse}`
+      });
+    }
     
     return { success: true };
   } catch (error) {

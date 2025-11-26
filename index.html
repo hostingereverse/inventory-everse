@@ -28,21 +28,21 @@
         </div>
       </div>
       <div class="col-md-3">
-        <div class="kpi-card" id="lowStockCard">
-          <p>Low Stock Items</p>
-          <h3 id="lowStock">0</h3>
+        <div class="kpi-card">
+          <p>Total Items</p>
+          <h3 id="totalNumber">0</h3>
         </div>
       </div>
       <div class="col-md-3">
-        <div class="kpi-card" id="noStockCard">
-          <p>No Stock Items</p>
-          <h3 id="noStock">0</h3>
+        <div class="kpi-card" id="totalGapsCard">
+          <p>Total Gaps</p>
+          <h3 id="totalGaps">0</h3>
         </div>
       </div>
       <div class="col-md-3">
         <div class="kpi-card">
           <p>Pending Orders</p>
-          <h3 id="unfulfilled">0</h3>
+          <h3 id="pendingOrders">0</h3>
         </div>
       </div>
     </div>
@@ -63,30 +63,56 @@
       </div>
     </div>
     
-    <!-- Recent Orders -->
-    <div class="card mt-4">
-      <div class="card-header">
-        <h4 class="mb-0">Recent Orders</h4>
+    <!-- Gaps and Products to Procure -->
+    <div class="row mt-4">
+      <div class="col-md-6">
+        <div class="card">
+          <div class="card-header">
+            <h4 class="mb-0">Gaps (Unfulfilled Orders)</h4>
+          </div>
+          <div class="card-body">
+            <div class="table-responsive">
+              <table class="table table-sm">
+                <thead>
+                  <tr>
+                    <th>Product</th>
+                    <th>Location</th>
+                    <th>Pending Qty</th>
+                  </tr>
+                </thead>
+                <tbody id="gapsTable">
+                  <tr>
+                    <td colspan="3" class="text-center">Loading...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
       </div>
-      <div class="card-body">
-        <div class="table-responsive">
-          <table class="table">
-            <thead>
-              <tr>
-                <th>Order ID</th>
-                <th>Date</th>
-                <th>Location</th>
-                <th>Product</th>
-                <th>Status</th>
-                <th>Amount</th>
-              </tr>
-            </thead>
-            <tbody id="recentOrdersTable">
-              <tr>
-                <td colspan="6" class="text-center">Loading...</td>
-              </tr>
-            </tbody>
-          </table>
+      <div class="col-md-6">
+        <div class="card">
+          <div class="card-header">
+            <h4 class="mb-0">Products to Procure (Variant Wise)</h4>
+          </div>
+          <div class="card-body">
+            <div class="table-responsive">
+              <table class="table table-sm">
+                <thead>
+                  <tr>
+                    <th>Product</th>
+                    <th>Location</th>
+                    <th>Qty Needed</th>
+                  </tr>
+                </thead>
+                <tbody id="procurementTable">
+                  <tr>
+                    <td colspan="3" class="text-center">Loading...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -94,19 +120,32 @@
   
   <!-- Bootstrap JS -->
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-  <!-- Authentication -->
-  <script src="auth-config.js"></script>
-  <script src="auth.js"></script>
   <!-- Google API -->
   <script src="https://apis.google.com/js/api.js"></script>
   <!-- PapaParse -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
   <!-- Config -->
   <script src="config.js"></script>
+  <!-- Authentication (Legacy - fallback) -->
+  <script src="auth-config.js"></script>
+  <script src="auth.js"></script>
+  <!-- Google Auth (New System) -->
+  <script src="js/google-auth.js"></script>
+  <!-- Audit Trail -->
+  <script src="js/audit-trail.js"></script>
+  <!-- Data Persistence -->
+  <script src="js/data-persistence.js"></script>
+  <!-- Data Loader -->
+  <script src="js/data-loader.js"></script>
+  <!-- Email Service -->
+  <script src="js/email-service.js"></script>
   <!-- API Helper -->
   <script src="js/api.js"></script>
   <!-- App Utils -->
   <script src="js/app.js"></script>
+  <script src="js/auto-product.js"></script>
+  <!-- App Initialization -->
+  <script src="js/init.js"></script>
   
   <script>
     let salesChart, stockChart;
@@ -130,32 +169,50 @@
     async function loadDashboard() {
       await waitForChart();
       try {
-        const data = await initApp();
+        // Wait for app initialization
+        if (typeof AppInit !== 'undefined') {
+          await AppInit.init();
+        }
+        
+        // Use DataLoader if available, otherwise fallback
+        let data;
+        if (typeof DataLoader !== 'undefined' && DataLoader.loadAllData) {
+          data = await DataLoader.loadAllData();
+        } else {
+          data = await initApp();
+        }
+        
+        // Start real-time polling if on dashboard (will also be started by AppInit, but this ensures it happens)
+        // Note: AppInit also starts polling, so this is a fallback
+        if (typeof DataLoader !== 'undefined' && DataLoader.startPolling && typeof renderDashboard === 'function') {
+          DataLoader.startPolling((updatedData) => {
+            // Update UI with new data
+            appData = { ...appData, ...updatedData };
+            renderDashboard();
+          });
+        }
         
         // Calculate KPIs
         const kpis = calculateKPIs();
         
         // Update KPI cards
-        const totalValue = Object.values(kpis.totalValue).reduce((a, b) => a + b, 0);
-        document.getElementById('totalValue').textContent = formatCurrency(totalValue);
-        document.getElementById('lowStock').textContent = kpis.lowStock;
-        document.getElementById('noStock').textContent = kpis.noStock;
-        document.getElementById('unfulfilled').textContent = kpis.unfulfilled;
+        document.getElementById('totalValue').textContent = formatCurrency(kpis.totalValue);
+        document.getElementById('totalNumber').textContent = kpis.totalNumber.toLocaleString();
+        document.getElementById('totalGaps').textContent = kpis.totalGaps;
+        document.getElementById('pendingOrders').textContent = kpis.pendingOrders;
         
-        // Alert styling
-        if (kpis.lowStock > 5) {
-          document.getElementById('lowStockCard').classList.add('alert-low');
-        }
-        if (kpis.noStock > 0) {
-          document.getElementById('noStockCard').classList.add('alert-low');
+        // Alert styling for gaps
+        if (kpis.totalGaps > 0) {
+          document.getElementById('totalGapsCard').classList.add('alert-low');
         }
         
         // Render charts
         renderSalesChart(data.orders);
         renderStockChart(data.inventory);
         
-        // Render recent orders
-        renderRecentOrders(data.orders.slice(0, 5));
+        // Render gaps and procurement
+        renderGaps(data.gaps);
+        renderProcurement(data.gaps, data.inventory);
         
       } catch (error) {
         console.error('Dashboard load error:', error);
@@ -268,30 +325,60 @@
       });
     }
     
-    function renderRecentOrders(orders) {
-      const tbody = document.getElementById('recentOrdersTable');
+    function renderGaps(gaps) {
+      const tbody = document.getElementById('gapsTable');
       if (!tbody) return;
       
-      if (orders.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center">No orders found</td></tr>';
+      if (!gaps || gaps.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="3" class="text-center">No gaps found</td></tr>';
         return;
       }
       
-      tbody.innerHTML = orders.map(order => {
-        const status = (order.status || '').toUpperCase();
-        const statusClass = status === 'PROCESSING' ? 'status-processing' : 
-                           status === 'FULFILLED' ? 'status-fulfilled' : 'status-canceled';
-        return `
-          <tr>
-            <td>${order.orderid || ''}</td>
-            <td>${order.date || ''}</td>
-            <td>${order.deliverylocation || order.deliveryLocation || ''}</td>
-            <td>${order.product || ''}</td>
-            <td><span class="badge ${statusClass}">${status}</span></td>
-            <td>${formatCurrency(order.sp || 0)}</td>
-          </tr>
-        `;
-      }).join('');
+      // Show top 5 gaps
+      const topGaps = gaps.slice(0, 5);
+      tbody.innerHTML = topGaps.map(gap => `
+        <tr>
+          <td>${gap.product || ''}</td>
+          <td>${gap.location || ''}</td>
+          <td><span class="badge bg-warning text-dark">${gap.pendingQty || 0}</span></td>
+        </tr>
+      `).join('');
+    }
+    
+    function renderProcurement(gaps, inventory) {
+      const tbody = document.getElementById('procurementTable');
+      if (!tbody) return;
+      
+      // Aggregate gaps by product variant
+      const procurementMap = {};
+      gaps.forEach(gap => {
+        const key = `${gap.product}_${gap.location}`;
+        if (!procurementMap[key]) {
+          procurementMap[key] = {
+            product: gap.product,
+            location: gap.location,
+            qty: 0
+          };
+        }
+        procurementMap[key].qty += parseInt(gap.pendingQty) || 0;
+      });
+      
+      const procurementList = Object.values(procurementMap);
+      
+      if (procurementList.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="3" class="text-center">No products to procure</td></tr>';
+        return;
+      }
+      
+      // Show top 5
+      const topProcurement = procurementList.slice(0, 5);
+      tbody.innerHTML = topProcurement.map(item => `
+        <tr>
+          <td>${item.product}</td>
+          <td>${item.location}</td>
+          <td><span class="badge bg-danger">${item.qty}</span></td>
+        </tr>
+      `).join('');
     }
     
     // Initialize on load

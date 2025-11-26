@@ -16,8 +16,11 @@
     
     <!-- Add/Edit Product Form -->
     <div class="card mb-4">
-      <div class="card-header">
+      <div class="card-header d-flex justify-content-between align-items-center">
         <h4 class="mb-0" id="formTitle">Add New Product</h4>
+        <button type="button" class="btn btn-sm btn-info" data-bs-toggle="modal" data-bs-target="#searchEverseModal">
+          🔍 Search from everse.in
+        </button>
       </div>
       <div class="card-body">
         <form id="productForm">
@@ -29,7 +32,12 @@
             </div>
             <div class="col-md-3">
               <label class="form-label">Name</label>
-              <input type="text" class="form-control" id="productName" required>
+              <div class="input-group">
+                <input type="text" class="form-control" id="productName" required>
+                <button type="button" class="btn btn-outline-secondary" onclick="quickSearchEverse()" title="Quick search on everse.in">
+                  🔍
+                </button>
+              </div>
             </div>
             <div class="col-md-3">
               <label class="form-label">Description</label>
@@ -49,6 +57,33 @@
             </div>
           </div>
         </form>
+      </div>
+    </div>
+    
+    <!-- Search everse.in Modal -->
+    <div class="modal fade" id="searchEverseModal" tabindex="-1">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Search Product on everse.in</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div class="mb-3">
+              <label class="form-label">Search Product</label>
+              <div class="input-group">
+                <input type="text" class="form-control" id="everseSearchInput" placeholder="Enter product name or keyword...">
+                <button class="btn btn-primary" onclick="searchEverse()">Search</button>
+              </div>
+            </div>
+            <div id="everseSearchResults" class="mt-3">
+              <p class="text-muted text-center">Enter search term and click Search</p>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+          </div>
+        </div>
       </div>
     </div>
     
@@ -108,14 +143,30 @@
   </div>
   
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-  <!-- Authentication -->
+  <!-- Google API -->
+  <script src="https://apis.google.com/js/api.js"></script>
+  <!-- PapaParse -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <!-- Config -->
+  <script src="config.js"></script>
+  <!-- Authentication (Legacy - fallback) -->
   <script src="auth-config.js"></script>
   <script src="auth.js"></script>
-  <script src="https://apis.google.com/js/api.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-  <script src="config.js"></script>
+  <!-- Google Auth (New System) -->
+  <script src="js/google-auth.js"></script>
+  <!-- Audit Trail -->
+  <script src="js/audit-trail.js"></script>
+  <!-- Data Persistence -->
+  <script src="js/data-persistence.js"></script>
+  <!-- Data Loader -->
+  <script src="js/data-loader.js"></script>
+  <!-- API Helper -->
   <script src="js/api.js"></script>
+  <!-- App Utils -->
   <script src="js/app.js"></script>
+  <script src="js/product-scraper.js"></script>
+  <!-- App Initialization -->
+  <script src="js/init.js"></script>
   
   <script>
     let allProducts = [];
@@ -126,7 +177,19 @@
     
     async function loadProducts() {
       try {
-        const data = await initApp();
+        // Wait for app initialization
+        if (typeof AppInit !== 'undefined') {
+          await AppInit.init();
+        }
+        
+        // Use DataLoader if available, otherwise fallback
+        let data;
+        if (typeof DataLoader !== 'undefined' && DataLoader.loadAllData) {
+          data = await DataLoader.loadAllData();
+        } else {
+          data = await initApp();
+        }
+        
         allProducts = data.inventory || [];
         filteredProducts = [...allProducts];
         
@@ -261,6 +324,17 @@
         // Set all stocks to 0
         const product = allProducts.find(p => p.productID === productID);
         if (product) {
+          // Log audit event before deletion
+          if (typeof logAuditEvent === 'function') {
+            await logAuditEvent({
+              action: 'DELETE',
+              entity: 'Product',
+              entityID: productID,
+              oldValue: product,
+              details: `Product ${product.name} (${productID}) deleted - all stocks set to 0`
+            });
+          }
+          
           for (const warehouse of CONFIG.WAREHOUSES) {
             await updateStock(productID, warehouse, -(product.stock[warehouse] || 0));
           }
@@ -349,7 +423,23 @@
             product.stock.Mumbai
           ];
           
+          // Store old values for audit
+          const oldProduct = editingProduct;
+          
           await updateSheet(CONFIG.SHEETS.INVENTORY.range, rows, CONFIG.SHEETS.INVENTORY.sheetKey);
+          
+          // Log audit event
+          if (typeof logAuditEvent === 'function') {
+            await logAuditEvent({
+              action: 'UPDATE',
+              entity: 'Product',
+              entityID: productID,
+              oldValue: oldProduct,
+              newValue: product,
+              details: `Product ${product.name} (${productID}) updated`
+            });
+          }
+          
           showToast('Product updated successfully', 'success');
         } else {
           // Add new product
@@ -366,6 +456,18 @@
           ];
           
           await saveSheet(CONFIG.SHEETS.INVENTORY.range, values, CONFIG.SHEETS.INVENTORY.sheetKey);
+          
+          // Log audit event
+          if (typeof logAuditEvent === 'function') {
+            await logAuditEvent({
+              action: 'CREATE',
+              entity: 'Product',
+              entityID: productID,
+              newValue: product,
+              details: `New product ${product.name} (${productID}) created`
+            });
+          }
+          
           showToast('Product added successfully', 'success');
         }
         
@@ -391,6 +493,122 @@
       currentPage = 1;
       renderProducts();
     });
+    
+    // Search everse.in and auto-fill form
+    async function searchEverse() {
+      const searchTerm = document.getElementById('everseSearchInput').value.trim();
+      if (!searchTerm) {
+        showToast('Please enter a search term', 'warning');
+        return;
+      }
+      
+      const resultsDiv = document.getElementById('everseSearchResults');
+      resultsDiv.innerHTML = '<div class="text-center"><div class="spinner-border" role="status"></div><p>Searching everse.in...</p></div>';
+      
+      try {
+        if (typeof ProductScraper === 'undefined') {
+          resultsDiv.innerHTML = '<p class="text-danger">Product scraper not loaded. Please refresh the page.</p>';
+          return;
+        }
+        
+        const result = await ProductScraper.searchProduct(searchTerm);
+        
+        if (result.success && result.products && result.products.length > 0) {
+          resultsDiv.innerHTML = `
+            <h6>Found ${result.products.length} product(s):</h6>
+            <div class="list-group">
+              ${result.products.map((product, index) => `
+                <div class="list-group-item">
+                  <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                      <h6 class="mb-1">${product.name}</h6>
+                      ${product.description ? `<p class="mb-1 small">${product.description.substring(0, 100)}...</p>` : ''}
+                      ${product.price > 0 ? `<small>Price: ₹${product.price}</small>` : ''}
+                    </div>
+                    <button class="btn btn-sm btn-primary" onclick="useEverseProduct(${index})">Use This</button>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          `;
+          
+          // Store products for selection
+          window.everseSearchResults = result.products;
+        } else {
+          resultsDiv.innerHTML = '<p class="text-danger">No products found on everse.in. You can add manually.</p>';
+        }
+      } catch (error) {
+        console.error('Search error:', error);
+        resultsDiv.innerHTML = '<p class="text-danger">Search failed. Please try again or add product manually.</p>';
+      }
+    }
+    
+    // Use selected product from everse.in search
+    function useEverseProduct(index) {
+      const products = window.everseSearchResults;
+      if (!products || !products[index]) return;
+      
+      const product = products[index];
+      
+      // Auto-fill form
+      if (product.name) {
+        document.getElementById('productName').value = product.name;
+        // Generate product ID from name
+        const productID = product.name.toUpperCase().replace(/[^A-Z0-9]/g, '').substring(0, 10) + '-' + Date.now().toString().slice(-4);
+        document.getElementById('productID').value = productID;
+      }
+      
+      if (product.description) {
+        document.getElementById('productDescription').value = product.description.substring(0, 200);
+      }
+      
+      if (product.price > 0) {
+        // Estimate cost as 70% of sale price
+        document.getElementById('productCost').value = Math.round(product.price * 0.7);
+      }
+      
+      // Close modal
+      const modal = bootstrap.Modal.getInstance(document.getElementById('searchEverseModal'));
+      if (modal) modal.hide();
+      
+      showToast('Product details filled from everse.in', 'success');
+      
+      // Focus on reorder level field
+      document.getElementById('productReorder').focus();
+    }
+    
+    // Quick search (search by current product name)
+    function quickSearchEverse() {
+      const currentName = document.getElementById('productName').value.trim();
+      if (currentName) {
+        document.getElementById('everseSearchInput').value = currentName;
+      }
+      const modal = new bootstrap.Modal(document.getElementById('searchEverseModal'));
+      modal.show();
+      // Auto-search after modal is shown
+      setTimeout(() => {
+        if (currentName) {
+          searchEverse();
+        }
+      }, 500);
+    }
+    
+    // Allow Enter key to trigger search in modal
+    document.addEventListener('DOMContentLoaded', () => {
+      const searchInput = document.getElementById('everseSearchInput');
+      if (searchInput) {
+        searchInput.addEventListener('keypress', (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            searchEverse();
+          }
+        });
+      }
+    });
+    
+    window.searchEverse = searchEverse;
+    window.useEverseProduct = useEverseProduct;
+    window.quickSearchEverse = quickSearchEverse;
     
     // Initialize
     document.addEventListener('DOMContentLoaded', loadProducts);

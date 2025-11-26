@@ -145,14 +145,31 @@
   </div>
   
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-  <!-- Authentication -->
+  <!-- Google API -->
+  <script src="https://apis.google.com/js/api.js"></script>
+  <!-- PapaParse -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <!-- Config -->
+  <script src="config.js"></script>
+  <!-- Authentication (Legacy - fallback) -->
   <script src="auth-config.js"></script>
   <script src="auth.js"></script>
-  <script src="https://apis.google.com/js/api.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-  <script src="config.js"></script>
+  <!-- Google Auth (New System) -->
+  <script src="js/google-auth.js"></script>
+  <!-- Audit Trail -->
+  <script src="js/audit-trail.js"></script>
+  <!-- Data Persistence -->
+  <script src="js/data-persistence.js"></script>
+  <!-- Data Loader -->
+  <script src="js/data-loader.js"></script>
+  <!-- API Helper -->
   <script src="js/api.js"></script>
+  <!-- App Utils -->
   <script src="js/app.js"></script>
+  <script src="js/auto-product.js"></script>
+  <script src="js/analytics-loader.js"></script>
+  <!-- App Initialization -->
+  <script src="js/init.js"></script>
   
   <script>
     let lowStockChart, turnoverChart;
@@ -161,9 +178,28 @@
     
     async function loadAnalytics() {
       try {
-        const data = await initApp();
+        // Wait for app initialization
+        if (typeof AppInit !== 'undefined') {
+          await AppInit.init();
+        }
+        
+        // Use DataLoader if available, otherwise fallback
+        let data;
+        if (typeof DataLoader !== 'undefined' && DataLoader.loadAllData) {
+          data = await DataLoader.loadAllData();
+        } else {
+          data = await initApp();
+        }
+        
         filteredInventory = data.inventory || [];
         filteredMovements = data.movements || [];
+        
+        // Load data from all tabs in sales sheet for comprehensive analytics
+        if (typeof AnalyticsLoader !== 'undefined') {
+          const allTabsData = await AnalyticsLoader.loadAllSalesSheetTabs();
+          window.allSalesTabsData = allTabsData;
+          console.log('Loaded tabs:', Object.keys(allTabsData));
+        }
         
         // Populate warehouse filter
         const select = document.getElementById('filterWarehouse');
@@ -192,6 +228,33 @@
       }
     }
     
+    // Load data from all tabs in sales sheet
+    async function loadAllSalesTabs() {
+      try {
+        const salesSheetId = CONFIG.SPREADSHEETS.SALES;
+        
+        // Try to get list of all sheets in the spreadsheet
+        // Common tab names to check (adjust based on your sheet structure)
+        const commonTabs = ['Orders', 'Sales', 'Transactions', 'Invoices', 'Returns', 'Cancellations'];
+        
+        // Load orders (main tab)
+        const ordersData = await loadSheet(CONFIG.SHEETS.ORDERS.range, CONFIG.SHEETS.ORDERS.sheetKey);
+        
+        // Try loading additional tabs if they exist
+        const allSalesData = {
+          orders: parseOrders(ordersData.values || []),
+          otherTabs: {}
+        };
+        
+        // Store for analytics use
+        window.allSalesData = allSalesData;
+        
+      } catch (error) {
+        console.warn('Could not load all sales tabs:', error);
+        // Continue with main orders data
+      }
+    }
+    
     function applyAnalyticsFilters() {
       const warehouse = document.getElementById('filterWarehouse').value;
       const dateFrom = document.getElementById('dateFrom').value;
@@ -217,9 +280,27 @@
       renderCharts(inventory, movements);
     }
     
+    // Calculate sales frequency for products from orders
+    function calculateSalesFrequency(orders) {
+      const salesCount = {};
+      const ordersList = orders || appData.orders || [];
+      
+      ordersList.forEach(order => {
+        const productName = order.product || '';
+        if (productName) {
+          salesCount[productName] = (salesCount[productName] || 0) + 1;
+        }
+      });
+      
+      return salesCount;
+    }
+    
     function renderLowStock(inventory, warehouseFilter) {
       const tbody = document.getElementById('lowStockTable');
       if (!tbody) return;
+      
+      // Calculate sales frequency
+      const salesFreq = calculateSalesFrequency(appData.orders);
       
       const lowStockItems = [];
       
@@ -231,13 +312,18 @@
           const reorderLevel = product.reorderLevel || 0;
           
           if (stock > 0 && stock < reorderLevel) {
+            const productName = product.name || '';
+            const salesCount = salesFreq[productName] || 0;
+            
             lowStockItems.push({
               productID: product.productID,
               name: product.name,
               warehouse: wh,
               stock: stock,
               reorderLevel: reorderLevel,
-              unitCost: product.unitCost || 0
+              unitCost: product.unitCost || 0,
+              salesCount: salesCount,
+              category: typeof CONFIG.getProductCategory === 'function' ? CONFIG.getProductCategory(productName) : 'Other'
             });
           }
         });
@@ -248,12 +334,30 @@
         return;
       }
       
+      // Sort by sales frequency (fast moving first), then by category, then unsold at bottom
+      lowStockItems.sort((a, b) => {
+        // Fast moving (sold) products first
+        if (a.salesCount > 0 && b.salesCount === 0) return -1;
+        if (a.salesCount === 0 && b.salesCount > 0) return 1;
+        
+        // If both sold, sort by sales count (higher first)
+        if (a.salesCount > 0 && b.salesCount > 0) {
+          return b.salesCount - a.salesCount;
+        }
+        
+        // Both unsold - keep original order
+        return 0;
+      });
+      
       tbody.innerHTML = lowStockItems.map(item => {
         const percent = (item.stock / item.reorderLevel * 100).toFixed(0);
+        const salesBadge = item.salesCount > 0 ? 
+          `<span class="badge bg-success">${item.salesCount} sales</span>` : 
+          `<span class="badge bg-secondary">Unsold</span>`;
         return `
           <tr>
             <td>${item.productID}</td>
-            <td>${item.name}</td>
+            <td>${item.name} ${salesBadge}</td>
             <td>${item.warehouse}</td>
             <td><span class="badge bg-warning text-dark">${item.stock}</span></td>
             <td>${item.reorderLevel}</td>
@@ -267,6 +371,9 @@
     function renderNoStock(inventory, warehouseFilter) {
       const tbody = document.getElementById('noStockTable');
       if (!tbody) return;
+      
+      // Calculate sales frequency
+      const salesFreq = calculateSalesFrequency(appData.orders);
       
       const noStockItems = [];
       
@@ -287,13 +394,18 @@
               Math.floor((new Date() - new Date(lastMovement.date)) / (1000 * 60 * 60 * 24)) : 
               'N/A';
             
+            const productName = product.name || '';
+            const salesCount = salesFreq[productName] || 0;
+            
             noStockItems.push({
               productID: product.productID,
               name: product.name,
               warehouse: wh,
               reorderLevel: product.reorderLevel || 0,
               unitCost: product.unitCost || 0,
-              daysOut: daysOut
+              daysOut: daysOut,
+              salesCount: salesCount,
+              category: typeof CONFIG.getProductCategory === 'function' ? CONFIG.getProductCategory(productName) : 'Other'
             });
           }
         });
@@ -304,11 +416,29 @@
         return;
       }
       
+      // Sort by sales frequency (fast moving first), unsold at bottom
+      noStockItems.sort((a, b) => {
+        // Fast moving (sold) products first
+        if (a.salesCount > 0 && b.salesCount === 0) return -1;
+        if (a.salesCount === 0 && b.salesCount > 0) return 1;
+        
+        // If both sold, sort by sales count (higher first)
+        if (a.salesCount > 0 && b.salesCount > 0) {
+          return b.salesCount - a.salesCount;
+        }
+        
+        // Both unsold - keep original order
+        return 0;
+      });
+      
       tbody.innerHTML = noStockItems.map(item => {
+        const salesBadge = item.salesCount > 0 ? 
+          `<span class="badge bg-success">${item.salesCount} sales</span>` : 
+          `<span class="badge bg-secondary">Unsold</span>`;
         return `
           <tr>
             <td>${item.productID}</td>
-            <td>${item.name}</td>
+            <td>${item.name} ${salesBadge}</td>
             <td>${item.warehouse}</td>
             <td>${item.reorderLevel}</td>
             <td>${formatCurrency(item.unitCost)}</td>

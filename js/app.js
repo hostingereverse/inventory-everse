@@ -77,9 +77,26 @@ function showLoading(element) {
   element.innerHTML = '<div class="text-center"><div class="spinner-border" role="status"><span class="visually-hidden">Loading...</span></div></div>';
 }
 
-// Initialize app on page load
-async function initApp() {
+// Initialize app on page load (with Google Auth, DataLoader, and optimizations)
+async function initApp(forceRefresh = false) {
   try {
+    // Check Google Auth if enabled
+    if (CONFIG.SECURITY && CONFIG.SECURITY.USE_GOOGLE_AUTH && typeof GoogleAuth !== 'undefined') {
+      // Initialize Google Auth if not already done
+      try {
+        await GoogleAuth.init();
+        
+        if (!GoogleAuth.isAuthenticated()) {
+          sessionStorage.setItem('redirect_after_login', window.location.pathname);
+          window.location.href = 'login-google.html';
+          return null;
+        }
+      } catch (error) {
+        console.warn('Google Auth initialization failed:', error);
+        // Continue with legacy auth if Google Auth fails
+      }
+    }
+    
     appData.loading = true;
     showToast('Loading data...', 'info');
     
@@ -88,8 +105,15 @@ async function initApp() {
       await initGAPI();
     }
     
-    // Load all data
-    const data = await loadAllData();
+    // Use DataLoader if available (for caching and optimization)
+    let data;
+    if (typeof DataLoader !== 'undefined' && DataLoader.loadAllData) {
+      data = await DataLoader.loadAllData(forceRefresh);
+    } else {
+      // Fallback to old method
+      data = await loadAllData();
+    }
+    
     appData = { ...appData, ...data, loading: false };
     
     showToast('Data loaded successfully', 'success');
@@ -115,38 +139,38 @@ function getStock(productName, warehouse) {
 function calculateKPIs() {
   const inventory = appData.inventory || [];
   const orders = appData.orders || [];
+  const gaps = appData.gaps || [];
   
-  // Total inventory value per warehouse
-  const totalValue = {};
-  CONFIG.WAREHOUSES.forEach(wh => {
-    totalValue[wh] = inventory.reduce((sum, p) => {
-      return sum + (p.stock[wh] || 0) * (p.unitCost || 0);
+  // Total inventory value (all warehouses combined)
+  const totalValue = CONFIG.WAREHOUSES.reduce((sum, wh) => {
+    return sum + inventory.reduce((warehouseSum, p) => {
+      return warehouseSum + (p.stock[wh] || 0) * (p.unitCost || 0);
     }, 0);
-  });
+  }, 0);
   
-  // Low stock items (< reorder level)
-  const lowStock = inventory.filter(p => {
-    return CONFIG.WAREHOUSES.some(wh => {
-      const stock = p.stock[wh] || 0;
-      return stock > 0 && stock < (p.reorderLevel || 0);
-    });
+  // Total number of items (sum of all stock across all warehouses)
+  const totalNumber = CONFIG.WAREHOUSES.reduce((sum, wh) => {
+    return sum + inventory.reduce((warehouseSum, p) => {
+      return warehouseSum + (p.stock[wh] || 0);
+    }, 0);
+  }, 0);
+  
+  // Total gaps (sum of pending quantities)
+  const totalGaps = gaps.reduce((sum, gap) => {
+    return sum + (parseInt(gap.pendingQty) || 0);
+  }, 0);
+  
+  // Pending orders (PROCESSING or SHIPPED)
+  const pendingOrders = orders.filter(o => {
+    const status = (o.status || '').toUpperCase();
+    return status === 'PROCESSING' || status === 'SHIPPED';
   }).length;
-  
-  // No stock items (= 0)
-  const noStock = inventory.filter(p => {
-    return CONFIG.WAREHOUSES.every(wh => (p.stock[wh] || 0) === 0);
-  }).length;
-  
-  // Unfulfilled orders
-  const unfulfilled = orders.filter(o => 
-    (o.status || '').toUpperCase() === 'PROCESSING'
-  ).length;
   
   return {
     totalValue,
-    lowStock,
-    noStock,
-    unfulfilled
+    totalNumber,
+    totalGaps,
+    pendingOrders
   };
 }
 
@@ -155,25 +179,50 @@ function renderNavbar() {
   const navbar = document.getElementById('navbar');
   if (!navbar) return;
   
-  // Get current user if auth is enabled
+  // Get current user if auth is enabled (Google Auth or legacy Auth)
   let userInfo = '';
-  if (typeof Auth !== 'undefined' && Auth.getCurrentUser) {
-    const user = Auth.getCurrentUser();
-    if (user) {
-      userInfo = `
-        <li class="nav-item dropdown">
-          <a class="nav-link dropdown-toggle" href="#" id="userDropdown" role="button" data-bs-toggle="dropdown">
-            ${user.name || user.email} (${user.role})
-          </a>
-          <ul class="dropdown-menu dropdown-menu-end">
-            <li><a class="dropdown-item" href="auth-user-profile.html">Profile</a></li>
-            <li><hr class="dropdown-divider"></li>
-            <li><a class="dropdown-item" href="#" onclick="Auth.logout(); return false;">Logout</a></li>
-          </ul>
-        </li>
-      `;
-    }
+  let currentUser = null;
+  
+  // Try Google Auth first (new system)
+  if (typeof GoogleAuth !== 'undefined' && GoogleAuth.getCurrentUser) {
+    currentUser = GoogleAuth.getCurrentUser();
   }
+  // Fallback to legacy Auth
+  else if (typeof Auth !== 'undefined' && Auth.getCurrentUser) {
+    currentUser = Auth.getCurrentUser();
+  }
+  
+  if (currentUser) {
+    const isAdmin = currentUser.role === 'admin';
+    userInfo = `
+      <li class="nav-item dropdown">
+        <a class="nav-link dropdown-toggle" href="#" id="userDropdown" role="button" data-bs-toggle="dropdown">
+          ${currentUser.name || currentUser.fullName || currentUser.email} ${currentUser.role ? `(${currentUser.role})` : ''}
+        </a>
+        <ul class="dropdown-menu dropdown-menu-end">
+          <li><a class="dropdown-item" href="auth-user-profile.html">Profile</a></li>
+          ${isAdmin ? '<li><a class="dropdown-item" href="admin.html">Admin Panel</a></li>' : ''}
+          <li><hr class="dropdown-divider"></li>
+          <li><a class="dropdown-item" href="#" onclick="logout(); return false;">Logout</a></li>
+        </ul>
+      </li>
+    `;
+  }
+  
+  // Logout function
+  window.logout = async function() {
+    try {
+      if (typeof GoogleAuth !== 'undefined' && GoogleAuth.signOut) {
+        await GoogleAuth.signOut();
+      } else if (typeof Auth !== 'undefined' && Auth.logout) {
+        Auth.logout();
+      }
+      window.location.href = 'login-google.html';
+    } catch (error) {
+      console.error('Logout error:', error);
+      window.location.href = 'login-google.html';
+    }
+  };
   
   navbar.innerHTML = `
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
@@ -201,6 +250,9 @@ function renderNavbar() {
             </li>
             <li class="nav-item">
               <a class="nav-link" href="analytics.html">Analytics</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="tracking.html">Tracking</a>
             </li>
             <li class="nav-item">
               <a class="nav-link" href="#" onclick="exportCSV(); return false;">Export</a>

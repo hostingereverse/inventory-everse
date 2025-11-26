@@ -266,17 +266,25 @@ const Auth = {
   }
 };
 
-// Auto-initialize on page load
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => {
-    Auth.init();
-    Auth.checkSession();
-  });
-} else {
+// Export for use in other scripts
+window.Auth = Auth;
+
+// Auto-initialize on page load - ensure AUTH_CONFIG is loaded first
+function initAuth() {
+  if (typeof AUTH_CONFIG === 'undefined') {
+    // Wait for AUTH_CONFIG to load
+    setTimeout(initAuth, 100);
+    return;
+  }
+  
   Auth.init();
   Auth.checkSession();
 }
 
-// Export for use in other scripts
-window.Auth = Auth;
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initAuth);
+} else {
+  // DOM already loaded
+  initAuth();
+}
 

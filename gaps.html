@@ -57,21 +57,48 @@
   </div>
   
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-  <!-- Authentication -->
+  <!-- Google API -->
+  <script src="https://apis.google.com/js/api.js"></script>
+  <!-- PapaParse -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <!-- Config -->
+  <script src="config.js"></script>
+  <!-- Authentication (Legacy - fallback) -->
   <script src="auth-config.js"></script>
   <script src="auth.js"></script>
-  <script src="https://apis.google.com/js/api.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-  <script src="config.js"></script>
+  <!-- Google Auth (New System) -->
+  <script src="js/google-auth.js"></script>
+  <!-- Audit Trail -->
+  <script src="js/audit-trail.js"></script>
+  <!-- Data Persistence -->
+  <script src="js/data-persistence.js"></script>
+  <!-- Data Loader -->
+  <script src="js/data-loader.js"></script>
+  <!-- API Helper -->
   <script src="js/api.js"></script>
+  <!-- App Utils -->
   <script src="js/app.js"></script>
+  <!-- App Initialization -->
+  <script src="js/init.js"></script>
   
   <script>
     let allGaps = [];
     
     async function loadGaps() {
       try {
-        const data = await initApp();
+        // Wait for app initialization
+        if (typeof AppInit !== 'undefined') {
+          await AppInit.init();
+        }
+        
+        // Use DataLoader if available, otherwise fallback
+        let data;
+        if (typeof DataLoader !== 'undefined' && DataLoader.loadAllData) {
+          data = await DataLoader.loadAllData();
+        } else {
+          data = await initApp();
+        }
+        
         allGaps = data.gaps || [];
         
         // Aggregate gaps by product and location
@@ -132,70 +159,136 @@
     
     async function syncGaps() {
       try {
-        showToast('Syncing gaps from orders...', 'info');
+        showToast('Syncing gaps from unfulfilled orders...', 'info');
         
         const data = await initApp();
         const orders = data.orders || [];
         const inventory = data.inventory || [];
         
-        // Process all processing orders
-        const newGaps = [];
-        for (const order of orders) {
-          if (order.status && order.status.toUpperCase() === 'PROCESSING') {
-            await handleGap(order, inventory);
+        // Process unfulfilled orders (PROCESSING and SHIPPED)
+        const unfulfilledOrders = orders.filter(order => {
+          const status = (order.status || '').toUpperCase();
+          return status === 'PROCESSING' || status === 'SHIPPED';
+        });
+        
+        const gapMap = new Map(); // Use Map to aggregate gaps by product+location
+        
+        for (const order of unfulfilledOrders) {
+          const productName = order.product || '';
+          if (!productName) continue;
+          
+          const product = inventory.find(p => 
+            p.name === productName || p.productID === productName
+          );
+          
+          if (!product) {
+            console.warn(`Product not found in inventory: ${productName}`);
+            continue;
+          }
+          
+          const location = order.deliverylocation || order.deliveryLocation || '';
+          const warehouse = CONFIG.WAREHOUSES.find(w => 
+            location.toUpperCase().includes(w.toUpperCase().substring(0, 3))
+          ) || CONFIG.WAREHOUSES[0]; // Default to first warehouse if not found
+          
+          const stock = product.stock[warehouse] || 0;
+          const qty = 1; // Assuming qty is 1 per order
+          
+          if (stock < qty) {
+            const gapKey = `${productName}_${warehouse}`;
+            const neededQty = qty - stock;
             
-            // Check if gap exists
-            const product = inventory.find(p => 
-              p.name === order.product || p.productID === order.product
-            );
-            
-            if (product) {
-              const location = order.deliverylocation || order.deliveryLocation || '';
-              const warehouse = CONFIG.WAREHOUSES.find(w => 
-                location.toUpperCase().includes(w.toUpperCase().substring(0, 3))
-              ) || location;
-              
-              const stock = product.stock[warehouse] || 0;
-              const qty = 1; // Assuming qty is 1
-              
-              if (stock < qty) {
-                const gap = {
-                  product: order.product,
-                  location: warehouse,
-                  pendingQty: qty - stock,
-                  totalGaps: qty - stock,
-                  dateCreated: formatDate(order.date) || new Date().toISOString().split('T')[0]
-                };
-                
-                // Check if gap already exists
-                const existing = allGaps.find(g => 
-                  g.product === gap.product && g.location === gap.location
-                );
-                
-                if (!existing) {
-                  newGaps.push(gap);
-                }
-              }
+            if (gapMap.has(gapKey)) {
+              const existing = gapMap.get(gapKey);
+              existing.pendingQty += neededQty;
+              existing.totalGaps += neededQty;
+              existing.orderCount += 1;
+            } else {
+              gapMap.set(gapKey, {
+                product: productName,
+                location: warehouse,
+                pendingQty: neededQty,
+                totalGaps: neededQty,
+                dateCreated: formatDate(order.date) || new Date().toISOString().split('T')[0],
+                orderCount: 1,
+                currentStock: stock
+              });
             }
           }
         }
         
-        // Save new gaps
-        for (const gap of newGaps) {
-          await saveSheet(CONFIG.SHEETS.GAPS.range, [
+        // Get existing gaps to avoid duplicates
+        const existingGaps = new Set();
+        (data.gaps || []).forEach(gap => {
+          const key = `${gap.product}_${gap.location}`;
+          existingGaps.add(key);
+        });
+        
+        // Prepare new gaps to add
+        const newGaps = [];
+        const updatedGaps = [];
+        
+        gapMap.forEach((gap, key) => {
+          const gapData = [
             gap.product,
             gap.location,
             gap.pendingQty,
             gap.totalGaps,
             gap.dateCreated
-          ], CONFIG.SHEETS.GAPS.sheetKey);
+          ];
+          
+          if (existingGaps.has(key)) {
+            // Update existing gap
+            updatedGaps.push(gap);
+          } else {
+            // New gap
+            newGaps.push({ gap, gapData });
+          }
+        });
+        
+        // Save new gaps
+        let savedCount = 0;
+        for (const { gapData } of newGaps) {
+          try {
+            await saveSheet(CONFIG.SHEETS.GAPS.range, gapData, CONFIG.SHEETS.GAPS.sheetKey);
+            savedCount++;
+          } catch (error) {
+            console.error('Error saving gap:', error);
+          }
         }
         
-        showToast(`Gap sync complete. ${newGaps.length} new gaps found.`, 'success');
+        // Display summary
+        const summary = [];
+        if (savedCount > 0) {
+          summary.push(`${savedCount} new gap(s) added`);
+        }
+        if (updatedGaps.length > 0) {
+          summary.push(`${updatedGaps.length} existing gap(s) updated`);
+        }
+        if (unfulfilledOrders.length > 0) {
+          summary.push(`Checked ${unfulfilledOrders.length} unfulfilled order(s)`);
+        }
+        
+        // Log audit event
+        if (typeof logAuditEvent === 'function') {
+          await logAuditEvent({
+            action: 'SYNC',
+            entity: 'Gaps',
+            details: `Gap sync completed: ${savedCount} new gaps, ${updatedGaps.length} updated from ${unfulfilledOrders.length} unfulfilled orders`
+          });
+        }
+        
+        if (summary.length > 0) {
+          showToast(`✅ Gap sync complete. ${summary.join('. ')}.`, 'success');
+        } else {
+          showToast('✅ No new gaps found. All orders can be fulfilled.', 'success');
+        }
+        
+        // Reload gaps
         await loadGaps();
       } catch (error) {
         console.error('Sync gaps error:', error);
-        showToast('Error syncing gaps', 'danger');
+        showToast('Error syncing gaps: ' + error.message, 'danger');
       }
     }
     
