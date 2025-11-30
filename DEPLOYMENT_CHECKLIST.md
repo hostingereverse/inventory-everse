@@ -1,52 +1,52 @@
-# Deployment Checklist - All Features Complete ✅
+# Cloudflare Pages Deployment Checklist
 
-## ✅ Pre-Deployment Checklist
+## Project Information
+- **Project Name**: `inventory-everse`
+- **Dashboard URL**: https://dash.cloudflare.com/33cd05529e0bfb1c7eebed9144400d2c/pages/view/inventory-everse
+- **Live URL**: https://inventory-everse.pages.dev/
 
-### Google Cloud Console Setup:
-- [ ] People API enabled
-- [ ] Sheets API enabled
-- [ ] Gmail API enabled (for email reports)
-- [ ] OAuth 2.0 Client ID created
-- [ ] OAuth consent screen configured
-- [ ] Authorized redirect URIs added:
-  - `https://everse.co.in/login-google.html`
-  - `https://[your-netlify-domain]/login-google.html`
+## ✅ Required Cloudflare Pages Settings
 
-### Google Sheets Setup:
-- [ ] Users tab created (INVENTORY spreadsheet)
-- [ ] SerialNumbers tab created (INVENTORY spreadsheet)
-- [ ] Tracking tab created (SALES spreadsheet)
-- [ ] Couriers tab created (INVENTORY spreadsheet)
-- [ ] AuditLog tab created (INVENTORY spreadsheet)
-- [ ] Initial admin user added to Users tab
+### Build Configuration
+- **Framework preset**: `None`
+- **Build command**: `npm run build`
+- **Build output directory**: `.`
+- **Root directory**: `/` (or default)
+- **Deploy command**: ⚠️ **MUST BE EMPTY!**
 
-### Configuration:
-- [ ] `config.js` updated with security settings
-- [ ] `CONFIG.SECURITY.USE_GOOGLE_AUTH = true`
-- [ ] Email service URL configured (if using)
-- [ ] All spreadsheet IDs correct
+### Environment Variables (Optional)
+- Not required for basic deployment
+- Only needed if you want to use Cloudflare APIs
 
-### Testing:
-- [ ] Google OAuth login works
-- [ ] Only authorized users can access
-- [ ] Admin panel accessible to admins
-- [ ] Serial numbers persist to Google Sheets
-- [ ] Tracking data persists to Google Sheets
-- [ ] Audit logs record all actions
-- [ ] Daily email reports work (if configured)
-- [ ] Caching works correctly
-- [ ] Real-time polling works
+## ✅ Files Updated
 
----
+1. **wrangler.toml** - Project name: `inventory-everse` ✅
+2. **package.json** - Build script updated ✅
+3. **_redirects** - Cleaned up ✅
 
-## 🚀 Ready for Production
+## 🔄 Deployment Flow
 
-**All features implemented and tested.**
-**Code quality: Production-ready.**
-**Security: Enterprise-grade.**
+```
+Git Push → Cloudflare Build → npm run build → Auto-Deploy → Live Site
+```
 
----
+## ⚠️ Common Issues
 
-**Status**: ✅ Complete
-**Last Updated**: 2025-01-25
+### Issue: "CLOUDFLARE_API_TOKEN required"
+**Fix**: Remove/clear the "Deploy command" field in Cloudflare Dashboard
+
+### Issue: "Project not found"
+**Fix**: Verify project name is exactly `inventory-everse` in dashboard
+
+### Issue: Build succeeds but site doesn't load
+**Fix**: Check build output directory is set to `.`
+
+## ✅ Verification Steps
+
+1. ✅ Project name in dashboard: `inventory-everse`
+2. ✅ Build command: `npm run build`
+3. ✅ Build output directory: `.`
+4. ✅ Deploy command: **EMPTY**
+5. ✅ Deployment status: Success
+6. ✅ Site accessible: https://inventory-everse.pages.dev/
 

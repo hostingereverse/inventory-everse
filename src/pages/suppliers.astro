@@ -1,0 +1,72 @@
+---
+import Layout from '@components/Layout.astro';
+import { DB } from '../lib/db';
+import { formatCurrency, formatDate } from '../lib/utils';
+
+const db = Astro.locals.runtime?.env?.DB ? new DB(Astro.locals.runtime.env.DB) : null;
+let accounts: any[] = [];
+
+if (db) {
+  try {
+    accounts = await db.getAccounts();
+  } catch (error) {
+    console.error('Error loading suppliers:', error);
+  }
+}
+---
+
+<Layout title="Suppliers - Everse Inventory Pro">
+  <div class="space-y-6">
+    <div class="flex justify-between items-center">
+      <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">Suppliers</h1>
+      <div class="flex gap-3">
+        <a
+          href="/api/template?type=accounts"
+          class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2"
+        >
+          ⬇️ Download Template
+        </a>
+        <a
+          href="/upload"
+          class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+        >
+          ⬆️ Upload Data
+        </a>
+      </div>
+    </div>
+
+    {accounts.length > 0 ? (
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow overflow-x-auto">
+        <table class="w-full">
+          <thead>
+            <tr class="bg-gray-100 dark:bg-gray-700 border-b">
+              <th class="text-left p-3">Supplier Name</th>
+              <th class="text-right p-3">Purchase Rate</th>
+              <th class="text-right p-3">Quantity</th>
+              <th class="text-left p-3">Payment Date</th>
+              <th class="text-left p-3">Payment Method</th>
+              <th class="text-left p-3">Invoice ID</th>
+            </tr>
+          </thead>
+          <tbody>
+            {accounts.map((account) => (
+              <tr class="border-b hover:bg-gray-50 dark:hover:bg-gray-700">
+                <td class="p-3 font-semibold">{account.supplier_name || '-'}</td>
+                <td class="p-3 text-right">{formatCurrency(account.purchase_rate || 0)}</td>
+                <td class="p-3 text-right">{account.quantity || 0}</td>
+                <td class="p-3">{account.payment_date ? formatDate(account.payment_date) : '-'}</td>
+                <td class="p-3">{account.payment_method || '-'}</td>
+                <td class="p-3">{account.invoice_id || '-'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    ) : (
+      <div class="bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-8 text-center">
+        <p class="text-gray-600 dark:text-gray-400">No supplier data found. Upload data to get started.</p>
+      </div>
+    )}
+  </div>
+</Layout>
+

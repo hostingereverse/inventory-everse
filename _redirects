@@ -1,0 +1,11 @@
+# Cloudflare Pages redirects file
+
+# Serve actual HTML files
+/orders.html    /orders.html    200
+/stock.html    /stock.html    200
+/gaps.html    /gaps.html    200
+/analytics.html    /analytics.html    200
+/inventory-movement.html    /inventory-movement.html    200
+
+# SPA fallback - serve index.html for all other routes
+/*    /index.html    200

@@ -1,0 +1,55 @@
+---
+import Layout from '@components/Layout.astro';
+import DataTable from '@components/DataTable.astro';
+import { DB } from '../lib/db';
+import { formatCurrency, formatDate } from '../lib/utils';
+
+const db = Astro.locals.runtime?.env?.DB ? new DB(Astro.locals.runtime.env.DB) : null;
+let sales: any[] = [];
+let headers = ['Order ID', 'Date', 'Product', 'Delivery Location', 'Status', 'SP (Price)', 'CP', 'Sales Person', 'Remarks'];
+let rows: any[][] = [];
+
+if (db) {
+  try {
+    sales = await db.getSales();
+    rows = sales.map((sale) => {
+      // Type-safe access with fallbacks
+      const saleAny = sale as any;
+      return [
+        sale.order_id || '-',
+        formatDate(sale.date),
+        saleAny.product || '-',
+        saleAny.delivery_location || '-',
+        saleAny.status || 'PROCESSING',
+        formatCurrency(saleAny.sp || sale.amount || 0),
+        saleAny.cp ? formatCurrency(saleAny.cp) : '-',
+        saleAny.sales_person || '-',
+        saleAny.remarks || '-',
+      ];
+    });
+  } catch (error) {
+    console.error('Error loading sales:', error);
+    rows = [['Error loading data']];
+  }
+} else {
+  rows = [['Database not connected. Please configure D1 database.']];
+}
+---
+
+<Layout title="Sales - Everse Inventory Pro">
+  <div class="space-y-6">
+    <div class="flex justify-between items-center flex-wrap gap-4">
+      <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">Sales Analytics</h1>
+      <div class="flex gap-3">
+        <a
+          href="/api/template?type=sales"
+          class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2"
+        >
+          ⬇️ Download Template
+        </a>
+      </div>
+    </div>
+    <DataTable headers={headers} rows={rows} />
+  </div>
+</Layout>
+

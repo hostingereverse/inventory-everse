@@ -1,0 +1,153 @@
+---
+import Layout from '@components/Layout.astro';
+import KPICard from '@components/KPICard.astro';
+import { DB } from '../lib/db';
+import { calculateKPIs, getFastMovingProducts } from '../lib/kpis';
+import { formatCurrency } from '../lib/utils';
+
+// Access Cloudflare D1 database
+const db = Astro.locals.runtime?.env?.DB 
+  ? new DB(Astro.locals.runtime.env.DB)
+  : null;
+
+// Default values if DB not available
+let kpis = {
+  totalInventoryValue: 0,
+  totalItems: 0,
+  totalGaps: 0,
+  pendingOrders: 0,
+  totalRevenue: 0,
+  totalCOGS: 0,
+  totalProfit: 0,
+  totalAdSpend: 0,
+  netProfit: 0,
+  lowStockItems: 0,
+  deadStockItems: 0,
+  avgInventoryTurnover: 0,
+};
+
+let fastMoving: any[] = [];
+
+if (db) {
+  try {
+    kpis = await calculateKPIs(db);
+    fastMoving = await getFastMovingProducts(db, 5);
+  } catch (error) {
+    console.error('Error loading dashboard data:', error);
+  }
+}
+---
+
+<Layout title="Dashboard - Everse Inventory Pro">
+  <div class="space-y-6">
+    <div class="flex justify-between items-center flex-wrap gap-4">
+      <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">Dashboard</h1>
+      <div class="flex gap-3">
+        <a
+          href="/upload"
+          class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+        >
+          ⬆️ Upload Data
+        </a>
+        <a
+          href="/api/template?type=sales"
+          class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2"
+        >
+          ⬇️ Templates
+        </a>
+      </div>
+    </div>
+
+    <!-- KPI Cards Grid -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <KPICard
+        label="Total Inventory Value"
+        value={formatCurrency(kpis.totalInventoryValue)}
+        icon="💰"
+      />
+      <KPICard
+        label="Total Items"
+        value={kpis.totalItems.toLocaleString()}
+        icon="📦"
+      />
+      <KPICard
+        label="Total Revenue (30d)"
+        value={formatCurrency(kpis.totalRevenue)}
+        icon="💵"
+      />
+      <KPICard
+        label="Net Profit (30d)"
+        value={formatCurrency(kpis.netProfit)}
+        icon="📈"
+      />
+      <KPICard
+        label="Low Stock Items"
+        value={kpis.lowStockItems}
+        icon="⚠️"
+      />
+      <KPICard
+        label="Dead Stock Items"
+        value={kpis.deadStockItems}
+        icon="💀"
+      />
+      <KPICard
+        label="Pending Orders"
+        value={kpis.pendingOrders}
+        icon="📋"
+      />
+      <KPICard
+        label="Inventory Turnover"
+        value={kpis.avgInventoryTurnover.toFixed(2)}
+        icon="🔄"
+      />
+      <KPICard
+        label="Total COGS (30d)"
+        value={formatCurrency(kpis.totalCOGS)}
+        icon="💸"
+      />
+      <KPICard
+        label="Ad Spend (30d)"
+        value={formatCurrency(kpis.totalAdSpend)}
+        icon="📢"
+      />
+      <KPICard
+        label="Gross Profit"
+        value={formatCurrency(kpis.totalProfit)}
+        icon="💎"
+      />
+      <KPICard
+        label="Total Gaps"
+        value={kpis.totalGaps}
+        icon="🔴"
+      />
+    </div>
+
+    <!-- Fast Moving Products -->
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+      <h2 class="text-xl font-bold mb-4">Fast Moving Products (Top 5)</h2>
+      <div class="overflow-x-auto">
+        <table class="w-full">
+          <thead>
+            <tr class="border-b">
+              <th class="text-left p-2">Product</th>
+              <th class="text-left p-2">SKU</th>
+              <th class="text-right p-2">Sales (30d)</th>
+              <th class="text-right p-2">Stock</th>
+            </tr>
+          </thead>
+          <tbody>
+            {fastMoving.map((item) => (
+              <tr class="border-b">
+                <td class="p-2">{item.name}</td>
+                <td class="p-2 text-gray-600 dark:text-gray-400">{item.sku}</td>
+                <td class="p-2 text-right">{item.salesCount}</td>
+                <td class="p-2 text-right">{item.stock}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</Layout>
+

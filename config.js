@@ -1,78 +1,11 @@
 // Configuration for Everse Inventory Management
+// CSV-based system - No Google Sheets dependency
+
 const CONFIG = {
-  API_KEY: 'AIzaSyB8vGf1eR5vK7jP9mN2xQwLcT3zHs9fJkE',
-  CLIENT_ID: '1038642519075-0j5p8r2h9k3m7v6n1t2q4e8u0y6a9s5d.apps.googleusercontent.com',
-  GAS_PROXY_URL: 'https://script.google.com/macros/s/YOUR_DEPLOY_ID/exec',
-  EMAIL_SERVICE_URL: 'https://script.google.com/macros/s/YOUR_EMAIL_SERVICE_ID/exec', // Google Apps Script for email
+  // Data storage - Using CSV files and localStorage
+  STORAGE_TYPE: 'csv', // 'csv' for CSV-based system
   
-  // Security settings
-  SECURITY: {
-    USE_GOOGLE_AUTH: true, // Enable Google OAuth authentication
-    SESSION_TIMEOUT: 60, // minutes
-    REQUIRE_HTTPS: true
-  },
-  
-  SPREADSHEETS: {
-    SALES: '1WgKoJv27tNJdVxjzhLNteDgnnz9zA3QDh942XPO8hbM',      // Orders / sales data
-    INVENTORY: '1Uw1HPluxTXpqT9BdrdhShjZ2uP8YTv8Vxd_0NKCRWW0'                      // Inventory, gaps, stock movements
-  },
-  
-  SHEETS: {
-    ORDERS: {
-      sheetKey: 'SALES',
-      range: 'Orders!A:J',
-      cols: ['OrderID', 'Date', 'DeliveryLocation', 'Product', 'Status', 'SP', 'CP', 'GST', 'SalesPerson', 'Remarks']
-    },
-    INVENTORY: {
-      sheetKey: 'INVENTORY',
-      range: 'Inventory!A:I',
-      cols: ['ProductID', 'Name', 'Description', 'UnitCost', 'ReorderLevel', 'Stock_Bangalore', 'Stock_Kolkata', 'Stock_Chennai', 'Stock_Mumbai']
-    },
-    STOCK_MOVEMENTS: {
-      sheetKey: 'INVENTORY',
-      range: 'StockMovements!A:H',
-      cols: ['Date', 'Warehouse', 'ProductID', 'Type', 'Qty', 'SerialNumbers', 'Notes', 'User']
-    },
-    GAPS: {
-      sheetKey: 'INVENTORY',
-      range: 'Gaps!A:E',
-      cols: ['Product', 'Location', 'PendingQty', 'TotalGaps', 'DateCreated']
-    },
-    SERIAL_NUMBERS: {
-      sheetKey: 'INVENTORY',
-      range: 'SerialNumbers!A:G',
-      cols: ['SerialNumber', 'ProductID', 'ProductName', 'Warehouse', 'Status', 'DateAdded', 'ReferenceNumber']
-    },
-    TRACKING: {
-      sheetKey: 'SALES',
-      range: 'Tracking!A:H',
-      cols: ['OrderID', 'TrackingNumber', 'Courier', 'Status', 'CurrentLocation', 'LastUpdated', 'DeliveryDate', 'Timeline']
-    },
-    COURIERS: {
-      sheetKey: 'INVENTORY',
-      range: 'Couriers!A:E',
-      cols: ['ID', 'Name', 'Type', 'APIKey', 'TrackingURL']
-    },
-    USERS: {
-      sheetKey: 'INVENTORY',
-      range: 'Users!A:F',
-      cols: ['Email', 'Name', 'Role', 'Permissions', 'Active', 'DateAdded']
-    },
-    AUDIT_LOG: {
-      sheetKey: 'INVENTORY',
-      range: 'AuditLog!A:G',
-      cols: ['Timestamp', 'User', 'Action', 'Entity', 'EntityID', 'OldValue', 'NewValue', 'Details']
-    }
-  },
-  
-  // Default authorized users (will be overridden by Google Sheets)
-  AUTHORIZED_USERS: [
-    { email: 'jaffar4tech@gmail.com', role: 'admin', permissions: 'all', active: 'TRUE' },
-    { email: 'sales.everse@gmail.com', role: 'manager', permissions: 'view_orders,edit_orders,fulfill_orders', active: 'TRUE' },
-    { email: 'everse.niraj@gmail.com', role: 'manager', permissions: 'view_orders,edit_orders,fulfill_orders', active: 'TRUE' },
-    { email: 'sales@everse.in', role: 'sales', permissions: 'view_orders,fulfill_orders', active: 'TRUE' }
-  ],
-  
+  // Warehouse configuration
   WAREHOUSES: ['Bangalore', 'Kolkata', 'Chennai', 'Mumbai'],
   WAREHOUSE_INDEX: { 'Bangalore': 5, 'Kolkata': 6, 'Chennai': 7, 'Mumbai': 8 },
   
@@ -99,21 +32,28 @@ const CONFIG = {
     }
     return 'Other';
   },
-  
-  // Sample data for fallback
-  SAMPLE_DATA: {
-    inventory: [
-      { productID: 'P001', name: 'AIR 3S COMBO', description: 'Drone kit', unitCost: 1495, reorderLevel: 10, stock: { Bangalore: 20, Kolkata: 5, Chennai: 0, Mumbai: 15 } },
-      { productID: 'P002', name: 'NEO STANDARD', description: 'Standard model', unitCost: 299, reorderLevel: 20, stock: { Bangalore: 10, Kolkata: 30, Chennai: 5, Mumbai: 0 } }
-    ],
-    orders: [
-      ['E1013', '11-03', 'BANGLORE', 'AIR 3S COMBO', 'PROCESSING', 149500, '', '', '', ''],
-      ['40660', '11-03', 'KOLKATA', 'NEO STANDARD', 'PROCESSING', 29999, '', '', '', '']
-    ],
-    gaps: [
-      { product: 'Mini Drone', location: 'Chennai', pendingQty: 5, totalGaps: 5, dateCreated: '2025-11-25' },
-      { product: 'NEO', location: 'Mumbai', pendingQty: 6, totalGaps: 6, dateCreated: '2025-11-25' }
-    ]
+
+  // CSV column mappings (flexible - handles different column name formats)
+  CSV_COLUMNS: {
+    inventory: ['ProductID', 'Name', 'Description', 'UnitCost', 'ReorderLevel', 'Stock_Bangalore', 'Stock_Kolkata', 'Stock_Chennai', 'Stock_Mumbai'],
+    sales: ['Order ID', 'Order Type', 'Customer Name', 'Customer Mobile', 'Product', 'Total Price', 'Payment Status', 'Address'],
+    stock_movements: ['Date', 'Warehouse', 'ProductID', 'Type', 'Qty', 'SerialNumbers', 'Notes', 'User'],
+    gaps: ['Product', 'Location', 'PendingQty', 'TotalGaps', 'DateCreated'],
+    serial_numbers: ['SerialNumber', 'ProductID', 'ProductName', 'Warehouse', 'Status', 'DateAdded', 'ReferenceNumber'],
+    tracking: ['OrderID', 'TrackingNumber', 'Courier', 'Status', 'CurrentLocation', 'LastUpdated', 'DeliveryDate', 'Timeline'],
+    // Additional data types
+    suppliers: ['SupplierID', 'Supplier Name', 'Contact Person', 'Email', 'Phone', 'Address', 'City', 'State', 'PinCode', 'GST Number', 'Status'],
+    purchase_orders: ['PO Number', 'Supplier ID', 'Order Date', 'Expected Delivery', 'Product', 'Quantity', 'Unit Price', 'Total Amount', 'Status', 'Remarks'],
+    returns: ['Return ID', 'Order ID', 'Product', 'Quantity', 'Return Date', 'Reason', 'Status', 'Refund Amount', 'Customer Name', 'Contact'],
+    customers: ['Customer ID', 'Customer Name', 'Email', 'Mobile', 'Address', 'City', 'State', 'PinCode', 'Registration Date', 'Total Orders', 'Total Spent'],
+    price_history: ['ProductID', 'Product Name', 'Old Price', 'New Price', 'Change Date', 'Changed By', 'Reason', 'Effective From']
+  },
+
+  // Security settings
+  SECURITY: {
+    USE_GOOGLE_AUTH: false,
+    SESSION_TIMEOUT: 60,
+    REQUIRE_HTTPS: true,
+    AUTH_DISABLED: true
   }
 };
-

@@ -1,0 +1,119 @@
+---
+import Layout from '@components/Layout.astro';
+import { DB } from '../lib/db';
+import { calculateKPIs } from '../lib/kpis';
+import { formatCurrency, getDateRange } from '../lib/utils';
+
+const db = Astro.locals.runtime?.env?.DB ? new DB(Astro.locals.runtime.env.DB) : null;
+const { start, end } = getDateRange(30);
+
+let kpis = {
+  totalInventoryValue: 0,
+  totalItems: 0,
+  totalGaps: 0,
+  pendingOrders: 0,
+  totalRevenue: 0,
+  totalCOGS: 0,
+  totalProfit: 0,
+  totalAdSpend: 0,
+  netProfit: 0,
+  lowStockItems: 0,
+  deadStockItems: 0,
+  avgInventoryTurnover: 0,
+};
+
+if (db) {
+  try {
+    kpis = await calculateKPIs(db);
+  } catch (error) {
+    console.error('Error loading P&L data:', error);
+  }
+}
+---
+
+<Layout title="Profit & Loss - Everse Inventory Pro">
+  <div class="space-y-6">
+    <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">Profit & Loss Summary</h1>
+    <p class="text-gray-600 dark:text-gray-400">Last 30 days: {start} to {end}</p>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <!-- Revenue Section -->
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+        <h2 class="text-xl font-bold mb-4">Revenue</h2>
+        <div class="space-y-2">
+          <div class="flex justify-between">
+            <span>Total Sales</span>
+            <span class="font-semibold text-green-600">
+              {formatCurrency(kpis.totalRevenue)}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Expenses Section -->
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+        <h2 class="text-xl font-bold mb-4">Expenses</h2>
+        <div class="space-y-2">
+          <div class="flex justify-between">
+            <span>Cost of Goods Sold (COGS)</span>
+            <span class="font-semibold text-red-600">
+              {formatCurrency(kpis.totalCOGS)}
+            </span>
+          </div>
+          <div class="flex justify-between">
+            <span>Ad Spend</span>
+            <span class="font-semibold text-red-600">
+              {formatCurrency(kpis.totalAdSpend)}
+            </span>
+          </div>
+          <div class="border-t pt-2 mt-2">
+            <div class="flex justify-between font-bold">
+              <span>Total Expenses</span>
+              <span class="text-red-600">
+                {formatCurrency(kpis.totalCOGS + kpis.totalAdSpend)}
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Profit Summary -->
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6 md:col-span-2">
+        <h2 class="text-xl font-bold mb-4">Profit Summary</h2>
+        <div class="space-y-3">
+          <div class="flex justify-between text-lg">
+            <span>Gross Profit</span>
+            <span class="font-bold text-blue-600">
+              {formatCurrency(kpis.totalProfit)}
+            </span>
+          </div>
+          <div class="flex justify-between text-lg">
+            <span>Net Profit (After Ads)</span>
+            <span class={`font-bold text-2xl ${kpis.netProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              {formatCurrency(kpis.netProfit)}
+            </span>
+          </div>
+          <div class="flex justify-between text-sm text-gray-600 dark:text-gray-400 mt-4 pt-4 border-t">
+            <span>Profit Margin</span>
+            <span>
+              {kpis.totalRevenue > 0
+                ? ((kpis.netProfit / kpis.totalRevenue) * 100).toFixed(2)
+                : 0}
+              %
+            </span>
+          </div>
+          <div class="flex justify-between text-sm text-gray-600 dark:text-gray-400">
+            <span>ROI on Ad Spend</span>
+            <span>
+              {kpis.totalAdSpend > 0
+                ? ((kpis.totalRevenue / kpis.totalAdSpend) * 100).toFixed(2)
+                : 0}
+              %
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</Layout>
+

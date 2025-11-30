@@ -1,0 +1,67 @@
+---
+import Layout from '@components/Layout.astro';
+import { DB } from '../lib/db';
+import { formatCurrency } from '../lib/utils';
+
+const db = Astro.locals.runtime?.env?.DB ? new DB(Astro.locals.runtime.env.DB) : null;
+let inventory: any[] = [];
+let lowStock: any[] = [];
+
+if (db) {
+  try {
+    inventory = await db.getInventory();
+    lowStock = inventory.filter((item) => item.stock <= item.reorder_point);
+  } catch (error) {
+    console.error('Error loading low stock:', error);
+  }
+}
+---
+
+<Layout title="Low Stock Alerts - Everse Inventory Pro">
+  <div class="space-y-6">
+    <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">Low Stock Alerts</h1>
+    
+    <div class="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4 mb-4">
+      <p class="font-semibold">⚠️ {lowStock.length} items need reordering</p>
+    </div>
+
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow overflow-x-auto">
+      <table class="w-full">
+        <thead>
+          <tr class="bg-gray-100 dark:bg-gray-700 border-b">
+            <th class="text-left p-3">SKU</th>
+            <th class="text-left p-3">Name</th>
+            <th class="text-left p-3">Warehouse</th>
+            <th class="text-right p-3">Current Stock</th>
+            <th class="text-right p-3">Reorder Point</th>
+            <th class="text-right p-3">Shortage</th>
+            <th class="text-right p-3">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {lowStock.map((item) => {
+            const shortage = item.reorder_point - item.stock;
+            return (
+              <tr class="border-b hover:bg-gray-50 dark:hover:bg-gray-700">
+                <td class="p-3">{item.sku}</td>
+                <td class="p-3">{item.name}</td>
+                <td class="p-3">{item.warehouse}</td>
+                <td class="p-3 text-right">
+                  <span class={`font-semibold ${item.stock === 0 ? 'text-red-600' : 'text-yellow-600'}`}>
+                    {item.stock}
+                  </span>
+                </td>
+                <td class="p-3 text-right">{item.reorder_point}</td>
+                <td class="p-3 text-right text-red-600 font-semibold">{shortage}</td>
+                <td class="p-3 text-right">
+                  <button class="text-blue-600 hover:underline hover:text-blue-700">Create PO</button>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</Layout>
+

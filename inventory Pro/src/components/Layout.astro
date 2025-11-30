@@ -1,0 +1,103 @@
+---
+export interface Props {
+  title?: string;
+}
+
+const { title = 'Everse Inventory Pro' } = Astro.props;
+---
+
+<!doctype html>
+<html lang="en" x-data="{ darkMode: localStorage.getItem('theme') === 'dark' || (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches) }" 
+      :class="{ 'dark': darkMode }">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="generator" content={Astro.generator} />
+    <title>{title}</title>
+  </head>
+  <body class="bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors">
+    <nav class="bg-blue-600 dark:bg-blue-800 text-white shadow-md">
+      <div class="container mx-auto px-4 py-3">
+        <div class="flex items-center justify-between flex-wrap gap-3">
+          <a href="/" class="text-xl font-bold hover:opacity-80">Everse Inventory Pro</a>
+          <div class="flex items-center gap-3 flex-wrap">
+            <a href="/" class="px-3 py-1 rounded hover:bg-blue-700 transition-colors">Dashboard</a>
+            <a href="/inventory" class="px-3 py-1 rounded hover:bg-blue-700 transition-colors">Inventory</a>
+            <a href="/upload" class="px-3 py-1 rounded hover:bg-blue-700 transition-colors">Upload</a>
+            <a href="/analytics" class="px-3 py-1 rounded hover:bg-blue-700 transition-colors">AI Analytics</a>
+            <a href="/suppliers" class="px-3 py-1 rounded hover:bg-blue-700 transition-colors">Suppliers</a>
+            <a href="/sales" class="px-3 py-1 rounded hover:bg-blue-700 transition-colors">Sales</a>
+            <a href="/low-stock" class="px-3 py-1 rounded hover:bg-blue-700 transition-colors">Low Stock</a>
+            <button 
+              @click="darkMode = !darkMode; localStorage.setItem('theme', darkMode ? 'dark' : 'light')"
+              class="p-2 rounded hover:bg-blue-700 dark:hover:bg-blue-900 transition-colors">
+              <span x-show="!darkMode">🌙</span>
+              <span x-show="darkMode">☀️</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </nav>
+    <main class="container mx-auto px-4 py-6">
+      <slot />
+    </main>
+    
+    <!-- Floating AI Button -->
+    <button
+      onclick="document.getElementById('aiModal').classList.remove('hidden')"
+      class="fixed bottom-6 right-6 bg-blue-600 text-white rounded-full w-16 h-16 shadow-lg hover:bg-blue-700 transition-all hover:scale-110 flex items-center justify-center text-2xl z-50"
+      title="Ask AI"
+    >
+      🤖
+    </button>
+
+    <!-- AI Modal -->
+    <div
+      id="aiModal"
+      class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+      onclick="if(event.target === this) this.classList.add('hidden')"
+    >
+      <div class="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-2xl w-full mx-4">
+        <div class="flex justify-between items-center mb-4">
+          <h2 class="text-xl font-bold">Ask AI</h2>
+          <button
+            onclick="document.getElementById('aiModal').classList.add('hidden')"
+            class="text-gray-500 hover:text-gray-700"
+          >
+            ✕
+          </button>
+        </div>
+        <input
+          type="text"
+          id="aiQueryInput"
+          placeholder="e.g., Show low stock items"
+          class="w-full border rounded-lg p-3 mb-4 bg-white dark:bg-gray-700"
+          onkeyup="if(event.key === 'Enter') document.getElementById('aiQueryBtn').click()"
+        />
+        <button
+          id="aiQueryBtn"
+          onclick="
+            const query = document.getElementById('aiQueryInput').value;
+            if(query) {
+              window.location.href = '/analytics?q=' + encodeURIComponent(query);
+              document.getElementById('aiModal').classList.add('hidden');
+            }
+          "
+          class="w-full bg-blue-600 text-white px-4 py-3 rounded-lg hover:bg-blue-700"
+        >
+          Ask
+        </button>
+      </div>
+    </div>
+
+    <script is:inline src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+  </body>
+</html>
+
+<style is:global>
+  html {
+    font-family: system-ui, sans-serif;
+  }
+</style>
+

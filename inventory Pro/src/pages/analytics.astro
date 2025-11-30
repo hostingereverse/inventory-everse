@@ -1,0 +1,169 @@
+---
+import Layout from '@components/Layout.astro';
+
+// Get initial query from URL parameter
+const url = Astro.url;
+const initialQuery = url.searchParams.get('q') || '';
+---
+
+<Layout title="AI Analytics - Everse Inventory Pro">
+  <div class="space-y-6" x-data="{
+    query: '',
+    loading: false,
+    results: null,
+    chartData: null,
+    history: []
+  }" x-init="
+    const urlParams = new URLSearchParams(window.location.search);
+    const q = urlParams.get('q');
+    if (q) {
+      query = decodeURIComponent(q);
+      // Wait for Alpine and askAI function to be available
+      setTimeout(() => {
+        if (window.askAI && query) {
+          askAI();
+        }
+      }, 200);
+    }
+  ">
+    <h1 class="text-3xl font-bold text-gray-800 dark:text-gray-200">AI Analytics</h1>
+    <p class="text-gray-600 dark:text-gray-400">
+      Ask questions in natural language. AI will analyze your data and generate insights.
+    </p>
+
+    <!-- AI Query Input -->
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+      <div class="flex gap-4">
+        <input
+          type="text"
+          x-model="query"
+          @keyup.enter="askAI()"
+          placeholder="e.g., 'Show low stock items', 'Total sales this month', 'Find price differences'"
+          class="flex-1 border rounded-lg p-3 bg-white dark:bg-gray-700"
+        />
+        <button
+          @click="askAI()"
+          :disabled="loading || !query"
+          class="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >
+          <span x-show="!loading">Ask AI</span>
+          <span x-show="loading">Loading...</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Results -->
+    <div x-show="results" class="bg-white dark:bg-gray-800 rounded-lg shadow p-6" style="display: none;">
+      <h2 class="text-xl font-bold mb-4">Results</h2>
+      <div x-html="results"></div>
+      
+      <!-- Chart -->
+      <div x-show="chartData" class="mt-6" style="display: none;">
+        <canvas id="resultChart" x-ref="chart"></canvas>
+      </div>
+    </div>
+
+    <!-- Example Queries -->
+    <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-6">
+      <h3 class="font-semibold mb-2">Example Queries:</h3>
+      <ul class="space-y-2 text-sm">
+        <li>• "Show low stock items"</li>
+        <li>• "Total sales this month"</li>
+        <li>• "Find products where scraped price differs from sell price"</li>
+        <li>• "Sales by category"</li>
+        <li>• "Fast moving products"</li>
+      </ul>
+    </div>
+  </div>
+
+  <script is:inline>
+    async function askAI() {
+      // Get Alpine component data
+      const component = document.querySelector('[x-data]');
+      if (!component || !window.Alpine) {
+        console.error('Alpine.js not loaded');
+        return;
+      }
+
+      const componentData = window.Alpine.$data(component);
+      const query = componentData.query;
+
+      if (!query) return;
+
+      componentData.loading = true;
+      componentData.results = null;
+      componentData.chartData = null;
+
+      try {
+        const response = await fetch('/api/ai-query', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query }),
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+          // Format results as table (escape user input to prevent XSS)
+          const escapeHtml = (str) => String(str || '').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+          let html = `<p class="mb-4"><strong>Query:</strong> ${escapeHtml(data.query || query)}</p>`;
+          if (data.sql) {
+            html += `<p class="mb-4 text-sm text-gray-600 dark:text-gray-400"><strong>SQL:</strong> <code>${escapeHtml(data.sql)}</code></p>`;
+          }
+          
+          if (data.data && data.data.length > 0) {
+            html += '<table class="w-full border-collapse"><thead><tr class="bg-gray-100 dark:bg-gray-700">';
+            Object.keys(data.data[0]).forEach(key => {
+              html += `<th class="border p-2 text-left">${escapeHtml(key)}</th>`;
+            });
+            html += '</tr></thead><tbody>';
+            data.data.slice(0, 20).forEach(row => {
+              html += '<tr>';
+              Object.values(row).forEach(val => {
+                // Escape HTML to prevent XSS
+                const escapedVal = String(val || '-').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+                html += `<td class="border p-2">${escapedVal}</td>`;
+              });
+              html += '</tr>';
+            });
+            html += '</tbody></table>';
+          } else {
+            html += '<p>No results found.</p>';
+          }
+
+          componentData.results = html;
+          componentData.chartData = data.chart;
+
+          // Render chart if data available
+          if (data.chart && window.Chart) {
+            const ctx = document.getElementById('resultChart');
+            if (ctx) {
+              // Destroy existing chart if any
+              if (window.resultChartInstance) {
+                window.resultChartInstance.destroy();
+              }
+              window.resultChartInstance = new Chart(ctx, {
+                type: data.chart.type || 'bar',
+                data: {
+                  labels: data.chart.labels || [],
+                  datasets: data.chart.datasets || [],
+                },
+              });
+            }
+          }
+        } else {
+          componentData.results = `<p class="text-red-600">Error: ${data.error || 'Unknown error'}</p>`;
+        }
+      } catch (error) {
+        componentData.results = `<p class="text-red-600">Error: ${error.message || 'Request failed'}</p>`;
+      } finally {
+        componentData.loading = false;
+      }
+    }
+
+    window.askAI = askAI;
+  </script>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+</Layout>
+
