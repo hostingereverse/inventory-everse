@@ -54,3 +54,6 @@ config.js
 js/
 css/
 *.html
+
+# Temporary folders
+inventory Pro/

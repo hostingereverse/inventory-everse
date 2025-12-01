@@ -1,0 +1,10 @@
+* [33m67174c6[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m)[m feat: v3.0.0 - Complete Astro rebuild with Cloudflare D1, 12 KPIs, modern UI, and all new features
+* [33m11db9ef[m Add comprehensive README
+* [33m7cbf80b[m Add GitHub Desktop instructions
+* [33m43e4a5d[m Add deployment guide and .gitignore
+* [33ma8ab3a4[m Add git deployment guide
+* [33m6560213[m Complete implementation: Google OAuth auth, admin panel, data persistence, audit trail, real-time updates, email reports, and critical fixes
+* [33m631feb3[m Add authentication system, UI improvements, and dashboard enhancements
+* [33m9d91c24[m Initial commit: Everse Inventory Management with dual-sheet configuration
+* [33m520068e[m[33m ([m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m Update wrangler.toml
+* [33mabe8573[m Add files via upload
